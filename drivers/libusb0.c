@@ -30,6 +30,15 @@
  * -------------------------------------------------------------------------- */
 
 #include "config.h" /* for HAVE_USB_DETACH_KERNEL_DRIVER_NP flag */
+
+#if (defined ENABLE_SHARED_PRIVATE_LIBS) && ENABLE_SHARED_PRIVATE_LIBS
+# if (defined BUILD_FOR_SHARED_PRIVATE_LIBS) && BUILD_FOR_SHARED_PRIVATE_LIBS
+#  define suggest_NDE_conflict          LIBNUTPRIVATE_suggest_NDE_conflict
+/* else: would need to pass method pointer like in main.c, too much
+ * hassle for a mixed-dynamicity build that might never happen */
+# endif
+#endif
+
 #include "common.h" /* for xmalloc, upsdebugx prototypes */
 #include "usb-common.h"
 #include "nut_libusb.h"
@@ -38,7 +47,7 @@
 #endif	/* WIN32 */
 
 #define USB_DRIVER_NAME		"USB communication driver (libusb 0.1)"
-#define USB_DRIVER_VERSION	"0.51"
+#define USB_DRIVER_VERSION	"0.53"
 
 /* driver description structure */
 upsdrv_info_t comm_upsdrv_info = {
@@ -345,7 +354,7 @@ static int nut_libusb_open(usb_dev_handle **udevp,
 				bus->dirname, dev->filename);
 
 			/* supported vendors are now checked by the
-			   supplied matcher */
+			 * supplied matcher */
 
 			/* open the device */
 			*udevp = udev = usb_open(dev);
@@ -378,10 +387,10 @@ static int nut_libusb_open(usb_dev_handle **udevp,
 			}
 
 			/* collect the identifying information of this
-			   device. Note that this is safe, because
-			   there's no need to claim an interface for
-			   this (and therefore we do not yet need to
-			   detach any kernel drivers). */
+			 * device. Note that this is safe, because
+			 * there's no need to claim an interface for
+			 * this (and therefore we do not yet need to
+			 * detach any kernel drivers). */
 
 			free(curDevice->Vendor);
 			free(curDevice->Product);
@@ -408,7 +417,7 @@ static int nut_libusb_open(usb_dev_handle **udevp,
 				fatal_with_errno(EXIT_FAILURE, "Out of memory");
 			}
 			upsdebugx(2, "%s: NOTE: BusPort is always zero with libusb0", __func__);
-			sprintf(curDevice->BusPort, "%03d", 0);
+			snprintf(curDevice->BusPort, 4, "%03d", 0);
 #endif
 
 			if (dev->descriptor.iManufacturer) {
@@ -592,11 +601,11 @@ static int nut_libusb_open(usb_dev_handle **udevp,
 				rdlen1);
 
 			/* SECOND METHOD: find HID descriptor among "extra" bytes of
-			   interface descriptor, i.e., bytes tucked onto the end of
-			   descriptor 2. */
+			 * interface descriptor, i.e., bytes tucked onto the end of
+			 * descriptor 2. */
 
 			/* Note: on some broken UPS's (e.g. Tripp Lite Smart1000LCD),
-				only this second method gives the correct result */
+			 * only this second method gives the correct result */
 			iface = &dev->config[usb_subdriver.usb_config_index].interface[usb_subdriver.hid_rep_index].altsetting[0];
 			for (i=0; i<iface->extralen; i+=iface->extra[i]) {
 				upsdebugx(4, "i=%d, extra[i]=%02x, extra[i+1]=%02x", i,
@@ -621,9 +630,9 @@ static int nut_libusb_open(usb_dev_handle **udevp,
 				rdlen2);
 
 			/* when available, always choose the second value, as it
-				seems to be more reliable (it is the one reported e.g. by
-				lsusb). Note: if the need arises, can change this to use
-				the maximum of the two values instead. */
+			 * seems to be more reliable (it is the one reported e.g. by
+			 * lsusb). Note: if the need arises, can change this to use
+			 * the maximum of the two values instead. */
 			if ((curDevice->VendorID == 0x463) && (curDevice->bcdDevice == 0x0202)) {
 				upsdebugx(1, "Eaton device v2.02. Using full report descriptor");
 				rdlens[0] = rdlen1;

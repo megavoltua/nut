@@ -328,13 +328,13 @@ static int masterguard_beeper_status(item_t *item, char *value, const size_t val
 	switch (item->value[0]) {
 		case '0':
 			if (valuelen >= 9)
-				strcpy(value, "disabled");
+				strcpy(value, "disabled");	/* length limit was checked */
 			else
 				*value = '\0';
 			break;
 		case '1':
 			if (valuelen >= 8)
-				strcpy(value, "enabled");
+				strcpy(value, "enabled");	/* length limit was checked */
 			else
 				*value = '\0';
 			break;
@@ -355,7 +355,7 @@ static int masterguard_output_voltages(item_t *item, char *value, const size_t v
 	for (w = strtok(item->value, sep); w; w = strtok(NULL, sep)) {
 		n++;
 		upsdebugx(4, "output voltage #%" PRIuSIZE ": %s", n, w);
-		if ((masterguard_e_outvolts = realloc(masterguard_e_outvolts, n * sizeof(info_rw_t))) == NULL) {
+		if ((masterguard_e_outvolts = (info_rw_t*)realloc(masterguard_e_outvolts, n * sizeof(info_rw_t))) == NULL) {
 			upsdebugx(1, "output voltages: allocating #%" PRIuSIZE " failed", n);
 			return -1;
 		}
@@ -363,7 +363,7 @@ static int masterguard_output_voltages(item_t *item, char *value, const size_t v
 		masterguard_e_outvolts[n - 1].preprocess = NULL;
 	}
 	/* need to do this seperately in case the loop is run zero times */
-	if ((masterguard_e_outvolts = realloc(masterguard_e_outvolts, (n + 1) * sizeof(info_rw_t))) == NULL) {
+	if ((masterguard_e_outvolts = (info_rw_t*)realloc(masterguard_e_outvolts, (n + 1) * sizeof(info_rw_t))) == NULL) {
 		upsdebugx(1, "output voltages: allocating terminator after #%" PRIuSIZE " failed", n);
 		return -1;
 	}
@@ -573,7 +573,7 @@ static int masterguard_setvar(item_t *item, char *value, const size_t valuelen) 
 			case 's':
 				/* copy to s to avoid snprintf()ing value to itself */
 				if (strlen(value) >= sizeof s) goto ill;
-				strcpy(s, value);
+				strcpy(s, value);	/* length limit was checked */
 				break;
 			default:
 				upsdebugx(2, "setvar: unknown dfl %c", item->dfl[0]);

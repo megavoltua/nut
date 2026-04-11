@@ -1,6 +1,8 @@
 /* conf.c - configuration handlers for upsd
 
-   Copyright (C) 2001  Russell Kroll <rkroll@exploits.org>
+   Copyright (C)
+	2001		Russell Kroll <rkroll@exploits.org>
+	2019 - 2026	Jim Klimov <jimklimov+nut@gmail.com>
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -54,7 +56,7 @@ static void ups_create(const char *fn, const char *name, const char *desc)
 	}
 
 	/* grab some memory and add the info */
-	temp = xcalloc(1, sizeof(*temp));
+	temp = (upstype_t*)xcalloc(1, sizeof(*temp));
 	temp->fn = xstrdup(fn);
 	temp->name = xstrdup(name);
 
@@ -270,14 +272,29 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 		certfile = xstrdup(arg[1]);
 		return 1;
 	}
+
+	if (!strcmp(arg[0], "CERTREQUEST") || !strcmp(arg[0], "CERTPATH") || !strcmp(arg[0], "CERTIDENT")) {
+		upsdebugx(1, "%s is not supported in this SSL build: --without-nss", arg[0]);
+		return 0;
+	}
+
 #elif (defined WITH_NSS) /* WITH_OPENSSL */
+
 	/* CERTPATH <dir> */
 	if (!strcmp(arg[0], "CERTPATH")) {
 		free(certfile);
 		certfile = xstrdup(arg[1]);
 		return 1;
 	}
-#ifdef WITH_CLIENT_CERTIFICATE_VALIDATION
+
+	if (!strcmp(arg[0], "CERTFILE")) {
+		upsdebugx(1, "%s is not supported in this SSL build: --without-openssl", arg[0]);
+		return 0;
+	}
+
+	/* See below for NSS handling of `CERTIDENT <name> <passwd>` with 2 arguments */
+
+# ifdef WITH_CLIENT_CERTIFICATE_VALIDATION
 	/* CERTREQUEST (0 | 1 | 2) */
 	if (!strcmp(arg[0], "CERTREQUEST")) {
 		if (isdigit((size_t)arg[1][0])) {
@@ -285,12 +302,40 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 			return 1;
 		}
 		else {
+			if (!strcmp(arg[1], "NO")) {
+				certrequest = NETSSL_CERTREQ_NO;	/* 0 */
+				return 1;
+			}
+			if (!strcmp(arg[1], "REQUEST")) {
+				certrequest = NETSSL_CERTREQ_REQUEST;	/* 1 */
+				return 1;
+			}
+			if (!strcmp(arg[1], "REQUIRE")) {
+				certrequest = NETSSL_CERTREQ_REQUIRE;	/* 2 */
+				return 1;
+			}
 			upslogx(LOG_ERR, "CERTREQUEST has non numeric value (%s)!", arg[1]);
 			return 0;
 		}
 	}
-#endif /* WITH_CLIENT_CERTIFICATE_VALIDATION */
-#endif /* WITH_OPENSSL | WITH_NSS */
+# else	/* WITH_NSS && !WITH_CLIENT_CERTIFICATE_VALIDATION */
+	if (!strcmp(arg[0], "CERTREQUEST")) {
+		upslogx(LOG_ERR, "CERTREQUEST is not supported in this SSL build: --with-nss --without-ssl-client-validation");
+		return 0;
+	}
+# endif	/* WITH_CLIENT_CERTIFICATE_VALIDATION */
+
+#else	/* Neither WITH_OPENSSL nor WITH_NSS: */
+
+	if (!strcmp(arg[0], "CERTREQUEST") || !strcmp(arg[0], "CERTPATH")
+	 || !strcmp(arg[0], "CERTIDENT") || !strcmp(arg[0], "CERTFILE")
+	 || !strcmp(arg[0], "DISABLE_WEAK_SSL")
+	) {
+		upsdebugx(1, "%s is not supported in this non-SSL build", arg[0]);
+		return 0;
+	}
+
+#endif	/* WITH_OPENSSL | WITH_NSS */
 
 #if defined(WITH_OPENSSL) || defined(WITH_NSS)
 	/* DISABLE_WEAK_SSL <bool> */
@@ -318,7 +363,7 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 	/* LISTEN <address> [<port>] */
 	if (!strcmp(arg[0], "LISTEN")) {
 		if (numargs < 3)
-			listen_add(arg[1], string_const(PORT));
+			listen_add(arg[1], string_const(NUT_PORT));
 		else
 			listen_add(arg[1], arg[2]);
 		return 1;
@@ -336,6 +381,7 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 
 #ifdef WITH_NSS
 	/* CERTIDENT <name> <passwd> */
+	/* Note: warning logs about rejection of the keyword for non-NSS builds is handled above */
 	if (!strcmp(arg[0], "CERTIDENT")) {
 		free(certname);
 		certname = xstrdup(arg[1]);
@@ -475,7 +521,7 @@ void do_upsconf_args(char *upsname, char *var, char *val)
 
 	/* if not listed, create a new entry and prepend it to the list */
 	if (temp == NULL) {
-		temp = xcalloc(1, sizeof(*temp));
+		temp = (ups_t*)xcalloc(1, sizeof(*temp));
 		temp->upsname = xstrdup(upsname);
 		temp->next = upstable;
 		upstable = temp;

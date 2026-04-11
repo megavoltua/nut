@@ -2,7 +2,7 @@
 
    Copyright (C)
         2002	Russell Kroll <rkroll@exploits.org>
-        2020 - 2025	Jim Klimov <jimklimov+nu@gmail.com>
+        2020 - 2026	Jim Klimov <jimklimov+nu@gmail.com>
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -99,6 +99,39 @@ typedef struct {
 
 const char *upscli_strerror(UPSCONN_t *ups);
 
+/* On some platforms, libupsclient builds tend to get a built-in copy
+ * of the internal code from NUT libcommon library, so for NUT client
+ * programs using both libraries as dynamically-linked shared code,
+ * the nut_debug_level setting is backed by independent variables in
+ * active memory, and upsdebugx() calls suffer if the library's copy
+ * is never changed from zero. It can get even more confusing with
+ * libnutprivate-common being a shared dynamically loaded library
+ * instance behind both the program and libupsclient, hence the cookies:
+ * direct NUT-common consumers like NUT in-tree clients can use their
+ * nut_common_cookie() to pass into methods here.
+ */
+const void *upscli_upslog_cookie(void);
+void upscli_upslog_set_debug_level(int lvl, const void *cookie);
+int  upscli_upslog_get_debug_level(void);
+
+/* Similarly for sub-process tags that help with troubleshooting */
+void upscli_upslog_setprocname(const char *pn, const void *cookie);
+void upscli_upslog_setproctag(const char *tag, const void *cookie);
+const char *upscli_upslog_getproctag(void);
+
+/* The NUT common library code is included in several other
+ * libraries, often with their private copies of variables,
+ * so we want to synchronize them.
+ * If internal `upslog_start` value is not yet set, we set
+ * it from *tv (or current time if tv==NULL), otherwise the
+ * method is no-op (keep and report the original setting).
+ * Returns the pointer to the currently set value, so it
+ * can be propagated or used in difftime() computations.
+ * NOTE: In WIN32 builds also enforces line-buffering for
+ * stdout and stderr streams.
+ */
+struct timeval *upscli_upslog_start_sync(struct timeval *tv, const void *cookie);
+
 /* NOTE: effectively only runs once; re-runs quickly skip out */
 int upscli_init(int certverify, const char *certpath, const char *certname, const char *certpasswd);
 int upscli_cleanup(void);
@@ -119,9 +152,11 @@ int upscli_list_start(UPSCONN_t *ups, size_t numq, const char **query);
 int upscli_list_next(UPSCONN_t *ups, size_t numq, const char **query,
 		size_t *numa, char ***answer);
 
+ssize_t upscli_sendline_timeout_may_disconnect(UPSCONN_t *ups, const char *buf, size_t buflen, const time_t timeout, int may_disconnect);
 ssize_t upscli_sendline_timeout(UPSCONN_t *ups, const char *buf, size_t buflen, const time_t timeout);
 ssize_t upscli_sendline(UPSCONN_t *ups, const char *buf, size_t buflen);
 
+ssize_t upscli_readline_timeout_may_disconnect(UPSCONN_t *ups, char *buf, size_t buflen, const time_t timeout, int may_disconnect);
 ssize_t upscli_readline_timeout(UPSCONN_t *ups, char *buf, size_t buflen, const time_t timeout);
 ssize_t upscli_readline(UPSCONN_t *ups, char *buf, size_t buflen);
 
@@ -139,6 +174,16 @@ int upscli_upserror(UPSCONN_t *ups);
 
 /* returns 1 if SSL mode is active for this connection */
 int upscli_ssl(UPSCONN_t *ups);
+
+#define UPSCLI_SSL_CAPS_NONE	0	/* No ability to use SSL */
+#define UPSCLI_SSL_CAPS_OPENSSL	1	/* Can use OpenSSL-specific setup */
+#define UPSCLI_SSL_CAPS_NSS	2	/* Can use Mozilla NSS-specific setup */
+
+/* Return a bitmap of the above for the current libupsclient build */
+int upscli_ssl_caps(void);
+/* String version for program help banners etc. */
+const char *upscli_ssl_caps_descr(void);
+void upscli_report_build_details(void);
 
 /* Assign default upscli_connect() from string; return 0 if OK, or
  * return -1 if parsing failed and current value was kept  */

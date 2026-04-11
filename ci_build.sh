@@ -35,6 +35,11 @@ SCRIPT_ARGS=("$@")
 # in a different directory and then it would be used with a warning. This may
 # require that you `make distclean` the original source checkout first:
 #   CI_BUILDDIR=obj BUILD_TYPE=default-all-errors ./ci_build.sh
+#
+# The NUT_SSL_VARIANTS=[yes, no, auto, ssl, nss, openssl] values can be used
+# with generic builds (not only iteration of a default-all-errors* matrix)
+# to set specific SSL options in tested NUT builds.
+#
 case "$BUILD_TYPE" in
     fightwarn) ;; # for default compiler
     fightwarn-all)
@@ -109,6 +114,8 @@ if [ "$BUILD_TYPE" = fightwarn ]; then
     # Similarly for testing builds with and without "unmapped" values
     # (normally hidden by #ifdef blocks) in certain evolving drivers
     #[ -n "$NUT_UNMAPPED_VARIANTS" ] || NUT_UNMAPPED_VARIANTS=auto
+
+    #[ -n "$NUT_LIBNUTPRIVATE_VARIANTS" ] || NUT_LIBNUTPRIVATE_VARIANTS=auto
 fi
 
 # configure default is "no"; an "auto" value is "yes unless CFLAGS say something"
@@ -1605,6 +1612,13 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                     CONFIG_OPTS+=("--without-unmapped-data-points") ;;
                 *)  ;; # Keep built-in default
             esac
+            case x"${WITH_LIBNUTPRIVATE-}" in
+                [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+                    CONFIG_OPTS+=("--enable-shared-pivate-libs") ;;
+                [Ff][Aa][Ll][Ss][Ee]|[Nn][Oo])
+                    CONFIG_OPTS+=("--disable-shared-pivate-libs") ;;
+                *)  ;; # Keep built-in default
+            esac
             ;;
     esac
 
@@ -1938,7 +1952,20 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
 
     case "$BUILD_TYPE" in
         "default-all-errors"*) ;;	# Treated below
-        *) configure_nut ;;
+        *)  # Final choices that can conflict with the matrix
+            # tried in default-all-errors* builds
+            case "${NUT_SSL_VARIANTS}" in
+                ssl|nss|openssl)
+                    CONFIG_OPTS+=("--with-${NUT_SSL_VARIANTS}")
+                    ;;
+                yes) CONFIG_OPTS+=("--with-ssl") ;;
+                no)  CONFIG_OPTS+=("--without-ssl") ;;
+                auto) CONFIG_OPTS+=("--with-ssl=auto") ;;
+                "") ;;
+                *)   echo "WARNING: Unrecognized NUT_SSL_VARIANTS='${NUT_SSL_VARIANTS}' for a general deterministic build, ignored" >&2 ;;
+            esac
+            configure_nut
+            ;;
     esac
 
     # NOTE: There is also a case "$BUILD_TYPE" above for setting CONFIG_OPTS
@@ -2137,15 +2164,35 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                 done
             fi
 
+            if [ -z "$NUT_LIBNUTPRIVATE_VARIANTS" ] || [ "$NUT_LIBNUTPRIVATE_VARIANTS" = auto ] || [ "$NUT_LIBNUTPRIVATE_VARIANTS" = default ] ; then
+                # Handle similarly to NUT_UNMAPPED_VARIANTS
+                NUT_LIBNUTPRIVATE_VARIANTS=()
+                case x"${WITH_LIBNUTPRIVATE-}" in
+                    [Tt][Rr][Uu][Ee]|[Yy][Ee][Ss])
+                        NUT_LIBNUTPRIVATE_VARIANTS+=("yes") ;;
+                    [Ff][Aa][Ll][Ss][Ee]|[Nn][Oo])
+                        NUT_LIBNUTPRIVATE_VARIANTS+=("no") ;;
+                    *)
+                        NUT_LIBNUTPRIVATE_VARIANTS+=("yes" "no") ;;
+                esac
+            else
+                TMP="$NUT_LIBNUTPRIVATE_VARIANTS"
+                NUT_LIBNUTPRIVATE_VARIANTS=()
+                for VAL in $TMP ; do
+                    NUT_LIBNUTPRIVATE_VARIANTS+=("$VAL")
+                done
+            fi
+
             # TODO: Similar loops for other variations like TESTING,
             # MGE SHUT vs. other serial protocols...
 
             BUILDSTODO_SSL="${#NUT_SSL_VARIANTS[@]}"
             BUILDSTODO_USB="${#NUT_USB_VARIANTS[@]}"
             BUILDSTODO_UNMAPPED="${#NUT_UNMAPPED_VARIANTS[@]}"
+            BUILDSTODO_LIBNUTPRIVATE="${#NUT_LIBNUTPRIVATE_VARIANTS[@]}"
 
-            echo "=== Found ${BUILDSTODO_SSL} SSL (${NUT_SSL_VARIANTS[*]}) and ${BUILDSTODO_USB} USB (${NUT_USB_VARIANTS[*]}) and ${BUILDSTODO_UNMAPPED} UNMAPPED (${NUT_UNMAPPED_VARIANTS[*]}) variations..."
-            if [ x"${BUILDSTODO_SSL}${BUILDSTODO_USB}${BUILDSTODO_UNMAPPED}" = x"000" ] ; then
+            echo "=== Found ${BUILDSTODO_SSL} SSL (${NUT_SSL_VARIANTS[*]}) and ${BUILDSTODO_USB} USB (${NUT_USB_VARIANTS[*]}) and ${BUILDSTODO_UNMAPPED} UNMAPPED (${NUT_UNMAPPED_VARIANTS[*]}) and ${BUILDSTODO_LIBNUTPRIVATE} LIBNUTPRIVATE (${NUT_LIBNUTPRIVATE_VARIANTS[*]}) variations..."
+            if [ x"${BUILDSTODO_SSL}${BUILDSTODO_USB}${BUILDSTODO_UNMAPPED}${BUILDSTODO_LIBNUTPRIVATE}" = x"0000" ] ; then
                 echo "=== ERROR: BUILD_TYPE='${BUILD_TYPE}' got no builds to run!" >&2
                 exit 1
             fi
@@ -2168,10 +2215,14 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
             if [ "$BUILDSTODO_UNMAPPED" = 1 ]; then
                 BUILDSTODO_ALWAYS="NUT_UNMAPPED_VARIANT=${NUT_UNMAPPED_VARIANTS[*]};${BUILDSTODO_ALWAYS}"
             fi
+            if [ "$BUILDSTODO_LIBNUTPRIVATE" = 1 ]; then
+                BUILDSTODO_ALWAYS="NUT_LIBNUTPRIVATE_VARIANT=${NUT_LIBNUTPRIVATE_VARIANTS[*]};${BUILDSTODO_ALWAYS}"
+            fi
 
             if [ "$BUILDSTODO_SSL" -le 1 ] \
             && [ "$BUILDSTODO_USB" -le 1 ] \
             && [ "$BUILDSTODO_UNMAPPED" -le 1 ] \
+            && [ "$BUILDSTODO_LIBNUTPRIVATE" -le 1 ] \
             ; then
                 echo "=== NOTE: Considering at most one variant in each category, will do them all at once"
                 BUILDSTODO_LIST+=("${BUILDSTODO_ALWAYS}")
@@ -2205,6 +2256,12 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                             BUILDSTODO_LIST+=("NUT_UNMAPPED_VARIANT=${VAL};${BUILDSTODO_ALWAYS}")
                         done
                     fi
+                    if [ "$BUILDSTODO_LIBNUTPRIVATE" -gt 1 ]; then
+                        for VAL in "${NUT_LIBNUTPRIVATE_VARIANTS[@]}" ; do
+                            if [ "$VAL" = no ] ; then continue ; fi # Default setting for other builds
+                            BUILDSTODO_LIST+=("NUT_LIBNUTPRIVATE_VARIANT=${VAL};${BUILDSTODO_ALWAYS}")
+                        done
+                    fi
                 else
                     # Try to mix into the smallest amount of builds (randomize
                     # the mix so we can cover many scenarios as different CI
@@ -2220,6 +2277,9 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
 
                     [ "$BUILDSTODO_MAX" -ge "$BUILDSTODO_UNMAPPED" ] \
                     || { BUILDSTODO_MAX="$BUILDSTODO_UNMAPPED"; BUILDSTODO_MAX_TYPE="BUILDSTODO_UNMAPPED" ; }
+
+                    [ "$BUILDSTODO_MAX" -ge "$BUILDSTODO_LIBNUTPRIVATE" ] \
+                    || { BUILDSTODO_MAX="$BUILDSTODO_LIBNUTPRIVATE"; BUILDSTODO_MAX_TYPE="BUILDSTODO_LIBNUTPRIVATE" ; }
 
                     # FIXME: Can this be eval'ed?
                     # First populate the longer set of variants:
@@ -2239,6 +2299,11 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                                 BUILDSTODO_LIST+=("NUT_UNMAPPED_VARIANT=${VAL};${BUILDSTODO_ALWAYS}")
                             done
                             ;;
+                        BUILDSTODO_LIBNUTPRIVATE)
+                            for VAL in "${NUT_LIBNUTPRIVATE_VARIANTS[@]}" ; do
+                                BUILDSTODO_LIST+=("NUT_LIBNUTPRIVATE_VARIANT=${VAL};${BUILDSTODO_ALWAYS}")
+                            done
+                            ;;
                     esac
 
                     case "${BUILDSTODO_MAX_TYPE}" in
@@ -2256,6 +2321,13 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                                 BUILDSTODO_LIST[$i]="NUT_UNMAPPED_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
                                 i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
                             done
+
+                            i=$(($RANDOM % $BUILDSTODO_MAX))
+                            [ "$BUILDSTODO_LIBNUTPRIVATE" -le 1 ] || \
+                            for VAL in "${NUT_LIBNUTPRIVATE_VARIANTS[@]}" ; do
+                                BUILDSTODO_LIST[$i]="NUT_LIBNUTPRIVATE_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
+                                i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
+                            done
                             ;;
                         BUILDSTODO_USB)
                             i=$(($RANDOM % $BUILDSTODO_MAX))
@@ -2271,6 +2343,13 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                                 BUILDSTODO_LIST[$i]="NUT_UNMAPPED_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
                                 i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
                             done
+
+                            i=$(($RANDOM % $BUILDSTODO_MAX))
+                            [ "$BUILDSTODO_LIBNUTPRIVATE" -le 1 ] || \
+                            for VAL in "${NUT_LIBNUTPRIVATE_VARIANTS[@]}" ; do
+                                BUILDSTODO_LIST[$i]="NUT_LIBNUTPRIVATE_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
+                                i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
+                            done
                             ;;
                         BUILDSTODO_UNMAPPED)
                             i=$(($RANDOM % $BUILDSTODO_MAX))
@@ -2284,6 +2363,35 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                             [ "$BUILDSTODO_USB" -le 1 ] || \
                             for VAL in "${NUT_USB_VARIANTS[@]}" ; do
                                 BUILDSTODO_LIST[$i]="NUT_USB_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
+                                i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
+                            done
+
+                            i=$(($RANDOM % $BUILDSTODO_MAX))
+                            [ "$BUILDSTODO_LIBNUTPRIVATE" -le 1 ] || \
+                            for VAL in "${NUT_LIBNUTPRIVATE_VARIANTS[@]}" ; do
+                                BUILDSTODO_LIST[$i]="NUT_LIBNUTPRIVATE_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
+                                i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
+                            done
+                            ;;
+                        BUILDSTODO_LIBNUTPRIVATE)
+                            i=$(($RANDOM % $BUILDSTODO_MAX))
+                            [ "$BUILDSTODO_SSL" -le 1 ] || \
+                            for VAL in "${NUT_SSL_VARIANTS[@]}" ; do
+                                BUILDSTODO_LIST[$i]="NUT_SSL_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
+                                i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
+                            done
+
+                            i=$(($RANDOM % $BUILDSTODO_MAX))
+                            [ "$BUILDSTODO_USB" -le 1 ] || \
+                            for VAL in "${NUT_USB_VARIANTS[@]}" ; do
+                                BUILDSTODO_LIST[$i]="NUT_USB_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
+                                i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
+                            done
+
+                            i=$(($RANDOM % $BUILDSTODO_MAX))
+                            [ "$BUILDSTODO_UNMAPPED" -le 1 ] || \
+                            for VAL in "${NUT_UNMAPPED_VARIANTS[@]}" ; do
+                                BUILDSTODO_LIST[$i]="NUT_UNMAPPED_VARIANT=${VAL};${BUILDSTODO_LIST[$i]}"
                                 i=$(( $(($i + 1)) % $BUILDSTODO_MAX))
                             done
                             ;;
@@ -2306,6 +2414,7 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                 NUT_SSL_VARIANT=""
                 NUT_USB_VARIANT=""
                 NUT_UNMAPPED_VARIANT=""
+                NUT_LIBNUTPRIVATE_VARIANT=""
                 eval $TESTCOMBO
 
                 echo "=== Starting 'TESTCOMBO=${TESTCOMBO}', ${BUILDSTODO} build variants remaining..."
@@ -2392,6 +2501,26 @@ default|default-alldrv|default-alldrv:no-distcheck|default-all-errors|default-al
                     *)  # Potentially something new? Unknown values can fail in the configure script.
                         echo "=== Building with 'NUT_UNMAPPED_VARIANT=${NUT_UNMAPPED_VARIANT}' (WARNING: may be not supported)..."
                         CONFIG_OPTS+=("--with-unmapped-data-points=${NUT_UNMAPPED_VARIANT}")
+                        ;;
+                esac
+
+                case "${NUT_LIBNUTPRIVATE_VARIANT}" in
+                    "") ;;
+                    yes|no)    # Try this variant
+                        echo "=== Building with 'NUT_LIBNUTPRIVATE_VARIANT=${NUT_LIBNUTPRIVATE_VARIANT}' ..."
+                        if [ "${NUT_SSL_VARIANTS[*]}" != "auto" ] && [ x"${NUT_SSL_VARIANT}" = x ] ; then
+                            CONFIG_OPTS+=("--without-all")
+                            CONFIG_OPTS+=("--without-ssl")
+                        fi
+                        CONFIG_OPTS+=("--with-serial=auto")
+                        if [ "${NUT_USB_VARIANTS[*]}" != "no" ] && [ x"${NUT_USB_VARIANT}" = x ] ; then
+                            CONFIG_OPTS+=("--with-usb=auto")
+                        fi
+                        CONFIG_OPTS+=("--enable-shared-private-libs=${NUT_LIBNUTPRIVATE_VARIANT}")
+                        ;;
+                    *)  # Potentially something new? Unknown values can fail in the configure script.
+                        echo "=== Building with 'NUT_LIBNUTPRIVATE_VARIANT=${NUT_LIBNUTPRIVATE_VARIANT}' (WARNING: may be not supported)..."
+                        CONFIG_OPTS+=("--enable-shared-private-libs=${NUT_LIBNUTPRIVATE_VARIANT}")
                         ;;
                 esac
 
@@ -2727,6 +2856,21 @@ bindings)
         CONFIG_OPTS+=("--with-unmapped-data-points")
     fi
 
+    if [ x"${WITH_LIBNUTPRIVATE-}" = xtrue ] ; then
+        CONFIG_OPTS+=("--enable-shared-private-libs")
+    fi
+
+    case "${NUT_SSL_VARIANTS}" in
+        ssl|nss|openssl)
+            CONFIG_OPTS+=("--with-${NUT_SSL_VARIANTS}")
+            ;;
+        yes) CONFIG_OPTS+=("--with-ssl") ;;
+        no)  CONFIG_OPTS+=("--without-ssl") ;;
+        auto) CONFIG_OPTS+=("--with-ssl=auto") ;;
+        "") ;;
+        *)   echo "WARNING: Unrecognized NUT_SSL_VARIANTS='${NUT_SSL_VARIANTS}' for a general deterministic build, ignored" >&2 ;;
+    esac
+
     if [ -n "${BUILD_DEBUGINFO-}" ]; then
         CONFIG_OPTS+=("--with-debuginfo=${BUILD_DEBUGINFO}")
     else
@@ -2864,6 +3008,15 @@ cross-windows-mingw*)
             esac
             ;;
     esac
+
+    if [ x"${WITH_LIBNUTPRIVATE-}" = x ] ; then
+        # For Windows we want compact builds
+        # (they reach into gigabytes anyway):
+        WITH_LIBNUTPRIVATE=true
+    fi	# else we have some value from caller
+    export WITH_LIBNUTPRIVATE
+
+    export NUT_SSL_VARIANTS
 
     SOURCEMODE="out-of-tree" \
     MAKEFLAGS="$PARMAKE_FLAGS" \

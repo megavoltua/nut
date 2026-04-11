@@ -30,7 +30,7 @@
 
 /* driver version */
 #define DRIVER_NAME	"Richcomm dry-contact to USB driver"
-#define DRIVER_VERSION	"0.16"
+#define DRIVER_VERSION	"0.17"
 
 /* driver description structure */
 upsdrv_info_t upsdrv_info = {
@@ -389,10 +389,10 @@ static int usb_device_open(usb_dev_handle **handlep, USBDevice_t *device, USBDev
 			}
 
 			/* collect the identifying information of this
-			   device. Note that this is safe, because
-			   there's no need to claim an interface for
-			   this (and therefore we do not yet need to
-			   detach any kernel drivers). */
+			 * device. Note that this is safe, because
+			 * there's no need to claim an interface for
+			 * this (and therefore we do not yet need to
+			 * detach any kernel drivers). */
 
 			free(device->Vendor);
 			free(device->Product);
@@ -410,7 +410,7 @@ static int usb_device_open(usb_dev_handle **handlep, USBDevice_t *device, USBDev
 				libusb_free_device_list(devlist, 1);
 				fatal_with_errno(EXIT_FAILURE, "Out of memory");
 			}
-			sprintf(device->Bus, "%03d", bus_num);
+			snprintf(device->Bus, 4, "%03d", bus_num);
 			iManufacturer = dev_desc.iManufacturer;
 			iProduct = dev_desc.iProduct;
 			iSerialNumber = dev_desc.iSerialNumber;
@@ -703,13 +703,13 @@ void upsdrv_updateinfo(void)
 	status_init();
 
 	if (online) {
-	    status_set("OL");
+		status_set("OL");
 	} else {
-	    status_set("OB");
+		status_set("OB");
 	}
 
 	if (!battery_normal) {
-	    status_set("LB");
+		status_set("LB");
 	}
 
 	status_commit();

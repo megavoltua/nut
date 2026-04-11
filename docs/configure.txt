@@ -117,6 +117,18 @@ Serial drivers
 
 	--with-serial
 
+Note this means drivers where serial port is the only supported connection
+(most of the NUT drivers), and half the ability of linkman:nutdrv_qx[8]
+(which can be built to use serial or USB or both types of media links).
+
+This toggle is currently unrelated to modbus drivers which normally use
+Serial RTU, but some can use TCP RTU and USB RTU. This might be or not be
+revised in future NUT releases.
+
+It also does not impact the build of `libnutscan` for link:nut-scanner[8],
+link:nutconf[8], and possibly other (third-party) consumers, which as a
+library aims to support all communications media it can.
+
 USB drivers
 ~~~~~~~~~~~
 
@@ -197,6 +209,20 @@ This allows to monitor numerous Power Supply Units (PSU) found on servers.
 Note that you need to install freeipmi (0.8.5 or higher, for nut-scanner;
 and 1.0.1 or higher, for nut-ipmipsu) development package or files.
 
+UPower/D-Bus drivers
+~~~~~~~~~~~~~~~~~~~~
+
+	--with-upower (default: auto-detect)
+
+Build and install the `nut-upower` driver.
+
+This allows to monitor UPS and battery devices managed by the UPower daemon
+via D-Bus. This introduces a new category of drivers that talk to operating
+system services to obtain power state information.
+
+Note that you need to install `glib-2.0` and `gio-2.0` development packages
+or files.
+
 I2C bus drivers
 ~~~~~~~~~~~~~~~
 
@@ -225,6 +251,10 @@ Modbus drivers
 Build and install modbus (Serial, TCP) drivers (default: auto-detect)
 
 Note that you need to install libmodbus development package or files.
+
+For most drivers, the ability to use serial port (and build code for that)
+is implicitly required, and currently independent from `--with-serial`
+option.
 
 	--with-modbus+usb
 
@@ -279,6 +309,13 @@ CGI configuration files. This is not enabled by default, as they
 are only useful on web servers. See link:data/htmlcgi/README[] for
 additional information on how to set up CGI programs.
 
+	--with-cgi-uri=/cgi-bin/nut
+
+If CGI feature is enabled, the path where NUT programs are expected
+to be exposed by the web server (e.g. if predictable by packaging
+integration) can be provided here and built into the `header.html`
+resource file, so it would be useful out of the box.
+
 NUT Scanner tool
 ~~~~~~~~~~~~~~~~
 
@@ -293,6 +330,16 @@ that can be relayed by a local linkman:dummy-ups[8] driver instance.
 Many of the features depend on third-party libraries that are loosely linked
 at run-time using libltdl, and due to that, the build, delivery and use of the
 tool does not depend on *all* of them being available in the final deployment.
+
+	--with-threading (default: auto)
+
+Currently limited to linkman:nut-scanner[8] tool: require/allow build with
+pthreads and/or semaphore support to parallelize the network and local port
+scans, and scans of different media types.
+
+Some older systems' implementation of threading may be broken, so while we
+can detect support, builds using it can fail in practice -- so this toggle
+allows to keep building sequential-only code.
 
 NUT Configuration tool
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -586,10 +633,12 @@ OS packaging policy) choose to build and install NUT itself `--without-pynut`.
 
 [WARNING]
 =========
-The module files are installed into a particular Python version's location
-such as `/usr/lib/python2.7/dist-packages` even if you specify a relaxed
-or un-versioned interpreter like `python2` (which would be used in scripts
-for the NUT-Monitor application and possible other consumers of the module).
+The module files are installed into a location dedicated to the particular
+Python version, such as `/usr/lib/python2.7/dist-packages` even if you specify
+a relaxed or un-versioned interpreter like `python2` (which would be used in
+scripts for the NUT-Monitor application and possible other consumers of the
+module).
+
 If the preferred Python version in the deployed system changes later (so the
 `python2` symlink for this example would point elsewhere) the module import
 would become not resolvable for such consumers, until it is installed into
@@ -709,6 +758,14 @@ cases -- even though those seem to be false positives.
 Cause the `configure` script run to report some internal values of variables as
 it goes through making of choices, to help recipe developers troubleshoot it.
 
+	--enable-shared-private-libs (default: no)
+
+Deliver NUT common libraries as shared objects used by different NUT binaries,
+rather than linking just the used bits into each binary.
+
+This has some potential both for mayhem (so disabled by default) and for
+significant reduction of installation footprint.
+
 I want it all!
 ~~~~~~~~~~~~~~
 
@@ -734,9 +791,22 @@ Enable SSL support, using either Mozilla NSS or OpenSSL.
 If both are present, and nothing was specified, OpenSSL support will
 be preferred.
 
-Read link:docs/security.txt[] for instructions on SSL support.
+Extended syntax also supports `--with-ssl=nss` or `--with-ssl=openssl`.
 
 NOTE: Currently the two implementations differ in supported features.
+
+	--with-ssl-client-validation (default: no)
+
+Enable the `upsd` server-side ability to set up `CERTREQUEST` directive in
+`upsd.conf`, which lets the server reject clients which do not present a
+certificate.
+
+WARNING: Until link:https://github.com/networkupstools/nut/issues/3329[issue
+#3329] is solved, not all stock NUT clients may even have a way to present
+some certain certificate.
+
+Read link:docs/security.txt[] for instructions on practical setup of SSL
+support.
 
 Networking access security
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -1116,11 +1186,13 @@ Use `--with-systemdshutdowndir` to detect the settings using pkg-config.
 Use `--with-systemdshutdowndir=no` to disable this feature altogether.
 
 	--with-systemdtmpfilesdir=PATH
+	--with-systemdsysusersdir=PATH
 
-Where to install Linux systemd configuration for tmpfiles handling (the
-automatically created locations for PID, state and similar run-time files).
-Useless and harmless on other OSes, including Linux distributions
-without systemd, just adding a little noise to configure script output.
+Where to install Linux systemd configuration for tmpfiles and sysusers
+handling (the automatically created locations for user/group, PID,
+state and similar run-time files). Useless and harmless on other OSes,
+including Linux distributions without systemd, just adding a little
+noise to configure script output.
 
 Use `--with-systemdtmpfilesdir` to detect the settings using pkg-config.
 

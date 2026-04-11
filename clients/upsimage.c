@@ -20,6 +20,7 @@
    Copyrights:
      (C) 1998  Russell Kroll <rkroll@exploits.org>
      (C) 2002  Simon Rozman <simon@rozman.net>
+     (C) 2020-2026 Jim Klimov <jimklimov+nut@gmail.com>
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -47,6 +48,10 @@
 #include "upsimagearg.h"
 
 #define MAX_CGI_STRLEN 64
+
+/* name-swap in libupsclient consumer to simplify the look of code base */
+#define builtin_setproctag(x)	setproctag(x)
+#define setproctag(x)	do { builtin_setproctag(x); upscli_upslog_setproctag(x, nut_common_cookie()); } while(0)
 
 /* network timeout for initial connection, in seconds */
 #define UPSCLI_DEFAULT_CONNECT_TIMEOUT	"10"
@@ -359,9 +364,9 @@ static void noimage(const char *fmt, ...)
 }
 
 /* draws bar indicator when minimum, nominal or maximum values for the given
-   UPS variable can be determined.
-   deviation < 0 means that values below nom should be grey instead of
-   green */
+ * UPS variable can be determined.
+ * deviation < 0 means that values below nom should be grey instead of green
+ */
 static void drawgeneralbar(double var, int min, int nom, int max,
 		int deviation, 	const char *format)
 	__attribute__((noreturn));
@@ -388,7 +393,7 @@ static void drawgeneralbar(double var, int min, int nom, int max,
 			max = nom + 3*deviation;
 	} else {
 		/* if nominal value isn't available, assume, it's the
-		   average between min and max */
+		 * average between min and max */
 		nom = (min + max) / 2;
 	}
 
@@ -612,17 +617,71 @@ static int get_var(const char *var, char *buf, size_t buflen)
 	return 1;
 }
 
+static void clean_exit(void)
+{
+	upscli_cleanup();
+
+	upsdebugx(1, "%s: finished, exiting", __func__);
+}
+
 int main(int argc, char **argv)
 {
-	char	str[SMALLBUF];
+	char	str[SMALLBUF], *s;
 	int	i, min, nom, max;
 	double	var = 0;
-	NUT_UNUSED_VARIABLE(argc);
-	NUT_UNUSED_VARIABLE(argv);
+
+#ifdef WIN32
+	/* Required ritual before calling any socket functions */
+	static WSADATA	WSAdata;
+	static int	WSA_Started = 0;
+	if (!WSA_Started) {
+		WSAStartup(2, &WSAdata);
+		atexit((void(*)(void))WSACleanup);
+		WSA_Started = 1;
+	}
+
+	/* Avoid binary output conversions, e.g.
+	 * mangling what looks like CRLF on WIN32 */
+	setmode(STDOUT_FILENO, O_BINARY);
+#endif
+
+	upscli_upslog_start_sync(upslog_start_sync(NULL), nut_common_cookie());
+	upscli_upslog_setprocname(xstrdup(getmyprocname()), nut_common_cookie());
+	getprogname_argv0_default(argc > 0 ? argv[0] : NULL, "upsimage(CGI)");
+
+	/* NOTE: Caller must `export NUT_DEBUG_LEVEL` to see debugs for upsc
+	 * and NUT methods called from it. This line aims to just initialize
+	 * the subsystem, and set initial timestamp. Debugging the client is
+	 * primarily of use to developers, so is not exposed via `-D` args.
+	 */
+	s = getenv("NUT_DEBUG_LEVEL");
+	if (s && str_to_int(s, &i, 10) && i > 0) {
+		nut_debug_level = i;
+		upscli_upslog_set_debug_level(nut_debug_level, nut_common_cookie());
+	}
+
+#ifdef NUT_CGI_DEBUG_UPSIMAGE
+# if (NUT_CGI_DEBUG_UPSIMAGE - 0 < 1)
+#  undef NUT_CGI_DEBUG_UPSIMAGE
+#  define NUT_CGI_DEBUG_UPSIMAGE 6
+# endif
+	/* Un-comment via make flags when developer-troubleshooting: */
+	nut_debug_level = NUT_CGI_DEBUG_UPSIMAGE;
+	upscli_upslog_set_debug_level(nut_debug_level, nut_common_cookie());
+#endif
+
+	if (nut_debug_level > 0) {
+		cgilogbit_set();
+		printf("Content-type: text/html\n");
+		printf("Pragma: no-cache\n");
+		printf("\n");
+		printf("<p>NUT CGI Debugging enabled, level: %d</p>\n\n", nut_debug_level);
+	}
 
 	extractcgiargs();
 
 	upscli_init_default_connect_timeout(NULL, NULL, UPSCLI_DEFAULT_CONNECT_TIMEOUT);
+	atexit(clean_exit);
 
 	/* no 'host=' or 'display=' given */
 	if ((!monhost) || (!cmd))
@@ -652,7 +711,7 @@ int main(int argc, char **argv)
 		if (!strcmp(cmd, imgvar[i].name)) {
 
 			/* sanity check whether we have draw function
-			   registered with this variable */
+			 * registered with this variable */
 			if (!imgvar[i].drawfunc) {
 				noimage("Draw function N/A");
 #ifndef HAVE___ATTRIBUTE__NORETURN
@@ -674,9 +733,10 @@ int main(int argc, char **argv)
 			}
 
 			/* when getting minimum, nominal and maximum values,
-			   we first look if the marginal value is supported
-			   by the UPS driver, if not, we look it up in the
-			   imgarg table under the SAME name */
+			 * we first look if the marginal value is supported
+			 * by the UPS driver, if not, we look it up in the
+			 * imgarg table under the SAME name
+			 */
 
 			/* get the minimum value */
 			if (imgvar[i].minimum) {

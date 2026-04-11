@@ -4,7 +4,7 @@
 	2003		Russell Kroll <rkroll@exploits.org>
 	2008		Arjen de Korte <adkorte-guest@alioth.debian.org>
 	2012-2017	Arnaud Quette <arnaud.quette@free.fr>
-	2020-2025	Jim Klimov <jimklimov+nut@gmail.com>
+	2020-2026	Jim Klimov <jimklimov+nut@gmail.com>
 	2025		desertwitch <dezertwitsh@gmail.com>
 
    This program is free software; you can redistribute it and/or modify
@@ -121,10 +121,11 @@ static void sock_fail(const char *fn)
 	case EADDRINUSE:
 	case EADDRNOTAVAIL:
 		printf("\nThings to try:\n\n");
+		/* NOTE: Do not reformat indentation with TABs, to keep lines aligned for consistent editing */
 		printf(" - ps -ef | grep '%s'\t(Linux, GNU userland)\n"
 		       " - ps -xawwu | grep '%s'\t(BSD, Solaris, embedded)\n"
 		       "   To check if another copy of the driver is running; if not:\n\n",
-		       progname, progname);
+			progname, progname);
 		printf(" - ls -la %s\n   To check if a (non-socket) filesystem object already exists there\n\n", fn);
 		printf(" - rm -rf %s\n   To remove any offending files (a new driver instance creates its own)\n", fn);
 		break;
@@ -194,17 +195,17 @@ static TYPE_FD sock_open(const char *fn)
 #else /* WIN32 */
 
 	fd = CreateNamedPipe(
-			fn,			/* pipe name */
-			PIPE_ACCESS_DUPLEX |	/* read/write access */
-			FILE_FLAG_OVERLAPPED,	/* async IO */
-			PIPE_TYPE_BYTE |
-			PIPE_READMODE_BYTE |
-			PIPE_WAIT,
-			PIPE_UNLIMITED_INSTANCES,	/* max. instances */
-			ST_SOCK_BUF_LEN,	/* output buffer size */
-			ST_SOCK_BUF_LEN,	/* input buffer size */
-			0,			/* client time-out */
-			NULL);			/* FIXME: default security attribute */
+		fn,			/* pipe name */
+		PIPE_ACCESS_DUPLEX	/* read/write access */
+		| FILE_FLAG_OVERLAPPED,	/* async IO */
+		PIPE_TYPE_BYTE
+		| PIPE_READMODE_BYTE
+		| PIPE_WAIT,
+		PIPE_UNLIMITED_INSTANCES,	/* max. instances */
+		ST_SOCK_BUF_LEN,	/* output buffer size */
+		ST_SOCK_BUF_LEN,	/* input buffer size */
+		0,			/* client time-out */
+		NULL);			/* FIXME: default security attribute */
 
 	if (INVALID_FD(fd)) {
 		fatal_with_errno(EXIT_FAILURE,
@@ -213,10 +214,12 @@ static TYPE_FD sock_open(const char *fn)
 
 	/* Prepare an async wait on a connection on the pipe */
 	memset(&connect_overlapped, 0, sizeof(connect_overlapped));
-	connect_overlapped.hEvent = CreateEvent(NULL, /*Security*/
-			FALSE, /* auto-reset*/
-			FALSE, /* inital state = non signaled*/
-			NULL /* no name*/);
+	connect_overlapped.hEvent = CreateEvent(
+		NULL,	/* Security */
+		FALSE,	/* auto-reset */
+		FALSE,	/* initial state = non signaled */
+		NULL	/* no name */
+	);
 	if (connect_overlapped.hEvent == NULL) {
 		fatal_with_errno(EXIT_FAILURE, "Can't create event");
 	}
@@ -321,13 +324,13 @@ static void send_to_all(const char *fmt, ...)
 		DWORD bytesWritten = 0;
 		BOOL  result = FALSE;
 
-		result = WriteFile (conn->fd, buf, buflen, &bytesWritten, NULL);
-		if( result == 0 ) {
+		result = WriteFile(conn->fd, buf, buflen, &bytesWritten, NULL);
+		if (result == 0) {
 			upsdebugx(2, "%s: write failed on handle %p, disconnecting", __func__, conn->fd);
 			sock_disconnect(conn);
 			continue;
 		}
-		else  {
+		else {
 			ret = (ssize_t)bytesWritten;
 		}
 #endif	/* WIN32 */
@@ -395,7 +398,8 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 #endif
 	va_end(ap);
 
-	upsdebugx(2, "%s: sending %.*s", __func__, (int)strcspn(buf, "\n"), buf);
+	upsdebugx(2, "%s: sending (got %" PRIiSIZE " from vsnprintf): %.*s",
+		__func__, ret, (int)strcspn(buf, "\n"), buf);
 	if (ret < 1) {
 		upsdebugx(2, "%s: nothing to write", __func__);
 		return 1;
@@ -419,11 +423,11 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 #ifndef WIN32
 	ret = write(conn->fd, buf, buflen);
 #else	/* WIN32 */
-	result = WriteFile (conn->fd, buf, buflen, &bytesWritten, NULL);
-	if( result == 0 ) {
+	result = WriteFile(conn->fd, buf, buflen, &bytesWritten, NULL);
+	if (result == 0) {
 		ret = 0;
 	}
-	else  {
+	else {
 		ret = (ssize_t)bytesWritten;
 	}
 #endif	/* WIN32 */
@@ -445,11 +449,11 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 #ifndef WIN32
 		ret = write(conn->fd, buf, buflen);
 #else	/* WIN32 */
-		result = WriteFile (conn->fd, buf, buflen, &bytesWritten, NULL);
-		if( result == 0 ) {
+		result = WriteFile(conn->fd, buf, buflen, &bytesWritten, NULL);
+		if (result == 0) {
 			ret = 0;
 		}
-		else  {
+		else {
 			ret = (ssize_t)bytesWritten;
 		}
 #endif	/* WIN32 */
@@ -461,11 +465,11 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 	if ((ret < 1) || (ret != (ssize_t)buflen)) {
 #ifndef WIN32
 		upsdebug_with_errno(0, "WARNING: %s: write %" PRIuSIZE " bytes to "
-			"socket %d failed (ret=%" PRIiSIZE "), disconnecting.",
+			"socket %d failed (ret=%" PRIiSIZE "), disconnecting",
 			__func__, buflen, (int)conn->fd, ret);
 #else	/* WIN32 */
 		upsdebug_with_errno(0, "WARNING: %s: write %" PRIuSIZE " bytes to "
-			"handle %p failed (ret=%" PRIiSIZE "), disconnecting.",
+			"handle %p failed (ret=%" PRIiSIZE "), disconnecting",
 			__func__, buflen, conn->fd, ret);
 #endif	/* WIN32 */
 		upsdebugx(6, "%s: failed write: %s", __func__, buf);
@@ -562,17 +566,17 @@ static void sock_connect(TYPE_FD sock)
 
 	/* sockfd is the handle of the connection pending pipe */
 	sockfd = CreateNamedPipe(
-			pipename,		/* pipe name */
-			PIPE_ACCESS_DUPLEX |	/* read/write access */
-			FILE_FLAG_OVERLAPPED,	/* async IO */
-			PIPE_TYPE_BYTE |
-			PIPE_READMODE_BYTE |
-			PIPE_WAIT,
-			PIPE_UNLIMITED_INSTANCES,	/* max. instances */
-			ST_SOCK_BUF_LEN,	/* output buffer size */
-			ST_SOCK_BUF_LEN,	/* input buffer size */
-			0,			/* client time-out */
-			NULL);			/* FIXME: default security attribute */
+		pipename,		/* pipe name */
+		PIPE_ACCESS_DUPLEX	/* read/write access */
+		| FILE_FLAG_OVERLAPPED,	/* async IO */
+		PIPE_TYPE_BYTE
+		| PIPE_READMODE_BYTE
+		| PIPE_WAIT,
+		PIPE_UNLIMITED_INSTANCES,	/* max. instances */
+		ST_SOCK_BUF_LEN,	/* output buffer size */
+		ST_SOCK_BUF_LEN,	/* input buffer size */
+		0,			/* client time-out */
+		NULL);			/* FIXME: default security attribute */
 
 	if (INVALID_FD(sockfd)) {
 		fatal_with_errno(EXIT_FAILURE,
@@ -581,31 +585,35 @@ static void sock_connect(TYPE_FD sock)
 
 	/* Prepare a new async wait for a connection on the pipe */
 	CloseHandle(connect_overlapped.hEvent);
-	memset(&connect_overlapped,0,sizeof(connect_overlapped));
-	connect_overlapped.hEvent = CreateEvent(NULL, /*Security*/
-			FALSE, /* auto-reset*/
-			FALSE, /* inital state = non signaled*/
-			NULL /* no name*/);
-	if(connect_overlapped.hEvent == NULL ) {
+	memset(&connect_overlapped, 0, sizeof(connect_overlapped));
+	connect_overlapped.hEvent = CreateEvent(
+		NULL,	/* Security */
+		FALSE,	/* auto-reset */
+		FALSE,	/* initial state = non signaled */
+		NULL	/* no name */
+	);
+	if (connect_overlapped.hEvent == NULL) {
 		fatal_with_errno(EXIT_FAILURE, "Can't create event");
 	}
 
 	/* Wait for a connection */
-	ConnectNamedPipe(sockfd,&connect_overlapped);
+	ConnectNamedPipe(sockfd, &connect_overlapped);
 
 	/* A new pipe waiting for new client connection has been created. We could manage the current connection now */
 	/* Start a read operation on the newly connected pipe so we could wait on the event associated to this IO */
-	memset(&conn->read_overlapped,0,sizeof(conn->read_overlapped));
-	memset(conn->buf,0,sizeof(conn->buf));
-	conn->read_overlapped.hEvent = CreateEvent(NULL, /*Security*/
-			FALSE, /* auto-reset*/
-			FALSE, /* inital state = non signaled*/
-			NULL /* no name*/);
-	if(conn->read_overlapped.hEvent == NULL ) {
+	memset(&conn->read_overlapped, 0, sizeof(conn->read_overlapped));
+	memset(conn->buf, 0, sizeof(conn->buf));
+	conn->read_overlapped.hEvent = CreateEvent(
+		NULL,	/* Security */
+		FALSE,	/* auto-reset */
+		FALSE,	/* initial state = non signaled */
+		NULL	/* no name */
+	);
+	if (conn->read_overlapped.hEvent == NULL) {
 		fatal_with_errno(EXIT_FAILURE, "Can't create event");
 	}
 
-	ReadFile (conn->fd, conn->buf,
+	ReadFile(conn->fd, conn->buf,
 		sizeof(conn->buf) - 1, /* -1 to be sure to have a trailling 0 */
 		NULL, &(conn->read_overlapped));
 #endif	/* WIN32 */
@@ -1037,8 +1045,8 @@ static void sock_read(conn_t *conn)
 	DWORD bytesRead;
 	BOOL res;
 	res = GetOverlappedResult(conn->fd, &conn->read_overlapped, &bytesRead, FALSE);
-	if( res == 0 ) {
-		upslogx(LOG_INFO, "Read error : %d",(int)GetLastError());
+	if (res == 0) {
+		upslogx(LOG_INFO, "Read error : %d", (int)GetLastError());
 		sock_disconnect(conn);
 		return;
 	}
@@ -1085,8 +1093,14 @@ static void sock_read(conn_t *conn)
 
 #ifdef WIN32
 	/* Restart async read */
-	memset(conn->buf,0,sizeof(conn->buf));
-	ReadFile(conn->fd,conn->buf,sizeof(conn->buf)-1,NULL,&(conn->read_overlapped)); /* -1 to be sure to have a trailling 0 */
+	memset(conn->buf, 0, sizeof(conn->buf));
+	ReadFile(
+		conn->fd,
+		conn->buf,
+		sizeof(conn->buf) - 1,	/* -1 to be sure to have a trailing 0 */
+		NULL,
+		&(conn->read_overlapped)
+	);
 #endif	/* WIN32 */
 }
 
@@ -1316,7 +1330,7 @@ int dstate_poll_fds(struct timeval timeout, TYPE_FD arg_extrafd)
 
 	/* Retrieve the signaled connection */
 	for (conn = connhead; conn != NULL; conn = conn->next) {
-		if( conn->read_overlapped.hEvent == rfds[ret-WAIT_OBJECT_0]) {
+		if (conn->read_overlapped.hEvent == rfds[ret-WAIT_OBJECT_0]) {
 			break;
 		}
 	}
@@ -2047,7 +2061,9 @@ void alarm_set(const char *buf)
 			}
 		}
 		upslogx(LOG_ERR, "%s: error setting alarm_buf to: %s%s",
-			__func__, alarm_tmp, ( (buflen < sizeof(alarm_tmp)) ? "" : "...<truncated>" ) );
+			__func__, alarm_tmp,
+			( (buflen < sizeof(alarm_tmp)) ? "" : "...<truncated>" )
+			);
 	} else if ((size_t)ret > sizeof(alarm_buf)) {
 		char	alarm_tmp[LARGEBUF];
 		int	ibuflen;
@@ -2083,7 +2099,8 @@ void alarm_set(const char *buf)
 		upslogx(LOG_WARNING, "%s: result was truncated while setting or appending "
 			"alarm_buf (limited to %" PRIuSIZE " bytes), with message: %s%s",
 			__func__, sizeof(alarm_buf), alarm_tmp,
-			( (buflen < sizeof(alarm_tmp)) ? "" : "...<also truncated>" ));
+			( (buflen < sizeof(alarm_tmp)) ? "" : "...<also truncated>" )
+			);
 	}
 }
 #if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP_BESIDEFUNC) && (!defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP_INSIDEFUNC) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS_BESIDEFUNC) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE_BESIDEFUNC) )
@@ -2229,13 +2246,14 @@ int dstate_detect_phasecount(
 		 * tables should take care of this with converion routine and numeric
 		 * data type flags. */
 #define dstate_getinfo_nonzero(var, suffix) \
-		do { strncpy(bufrw_ptr, suffix, bufrw_max); \
-		  if ( (var = dstate_getinfo(buf)) ) { \
-		    if ( (var[0] == '0' && var[1] == '\0') || \
-		         (var[0] == '\0') ) { \
-		      var = NULL; \
-		    } \
-		  } \
+		do { \
+			strncpy(bufrw_ptr, suffix, bufrw_max); \
+			if ( (var = dstate_getinfo(buf)) ) { \
+				if ( (var[0] == '0' && var[1] == '\0') \
+				||   (var[0] == '\0') ) { \
+					var = NULL; \
+				} \
+			} \
 		} while(0)
 
 		dstate_getinfo_nonzero(v1,  "L1.voltage");
@@ -2254,37 +2272,40 @@ int dstate_detect_phasecount(
 		dstate_getinfo_nonzero(v0,  "voltage");
 		dstate_getinfo_nonzero(c0,  "current");
 
-		if ( (v1 && v2 && !v3) ||
-		     (v1n && v2n && !v3n) ||
-		     (c1 && c2 && !c3) ||
-		     (v12 && !v23 && !v31) ) {
+		if ( (v1 && v2 && !v3)
+		 ||  (v1n && v2n && !v3n)
+		 ||  (c1 && c2 && !c3)
+		 ||  (v12 && !v23 && !v31)
+		) {
 			upsdebugx(5, "%s(): determined a 2-phase case", __func__);
 			*num_phases = 2;
 			*inited_phaseinfo = 1;
 			detected_phaseinfo = 1;
-		} else if ( (v1 && v2 && v3) ||
-		     (v1n && v2n && v3n) ||
-		     (c1 && (c2 || c3)) ||
-		     (c2 && (c1 || c3)) ||
-		     (c3 && (c1 || c2)) ||
-		     v12 || v23 || v31 ) {
+		} else if ( (v1 && v2 && v3)
+		 ||  (v1n && v2n && v3n)
+		 ||  (c1 && (c2 || c3))
+		 ||  (c2 && (c1 || c3))
+		 ||  (c3 && (c1 || c2))
+		 ||  v12 || v23 || v31
+		) {
 			upsdebugx(5, "%s(): determined a 3-phase case", __func__);
 			*num_phases = 3;
 			*inited_phaseinfo = 1;
 			detected_phaseinfo = 1;
 		} else if ( /* We definitely have only one non-zero line */
-		     !v12 && !v23 && !v31 && (
-		     (c0 && !c1 && !c2 && !c3) ||
-		     (v0 && !v1 && !v2 && !v3) ||
-		     (c1 && !c2 && !c3) ||
-		     (!c1 && c2 && !c3) ||
-		     (!c1 && !c2 && c3) ||
-		     (v1 && !v2 && !v3) ||
-		     (!v1 && v2 && !v3) ||
-		     (!v1 && !v2 && v3) ||
-		     (v1n && !v2n && !v3n) ||
-		     (!v1n && v2n && !v3n) ||
-		     (!v1n && !v2n && v3n) ) ) {
+		     !v12 && !v23 && !v31
+		 && (   (c0 && !c1 && !c2 && !c3)
+		     || (v0 && !v1 && !v2 && !v3)
+		     || (c1 && !c2 && !c3)
+		     || (!c1 && c2 && !c3)
+		     || (!c1 && !c2 && c3)
+		     || (v1 && !v2 && !v3)
+		     || (!v1 && v2 && !v3)
+		     || (!v1 && !v2 && v3)
+		     || (v1n && !v2n && !v3n)
+		     || (!v1n && v2n && !v3n)
+		     || (!v1n && !v2n && v3n) )
+		) {
 			*num_phases = 1;
 			*inited_phaseinfo = 1;
 			detected_phaseinfo = 1;

@@ -27,13 +27,22 @@
  * -------------------------------------------------------------------------- */
 
 #include "config.h" /* for HAVE_LIBUSB_DETACH_KERNEL_DRIVER flag */
+
+#if (defined ENABLE_SHARED_PRIVATE_LIBS) && ENABLE_SHARED_PRIVATE_LIBS
+# if (defined BUILD_FOR_SHARED_PRIVATE_LIBS) && BUILD_FOR_SHARED_PRIVATE_LIBS
+#  define suggest_NDE_conflict          LIBNUTPRIVATE_suggest_NDE_conflict
+/* else: would need to pass method pointer like in main.c, too much
+ * hassle for a mixed-dynamicity build that might never happen */
+# endif
+#endif
+
 #include "common.h" /* for xmalloc, upsdebugx prototypes */
 #include "usb-common.h"
 #include "nut_libusb.h"
 #include "nut_stdint.h"
 
 #define USB_DRIVER_NAME		"USB communication driver (libusb 1.0)"
-#define USB_DRIVER_VERSION	"0.51"
+#define USB_DRIVER_VERSION	"0.53"
 
 /* driver description structure */
 upsdrv_info_t comm_upsdrv_info = {
@@ -335,10 +344,10 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 		udev = *udevp;
 
 		/* collect the identifying information of this
-		   device. Note that this is safe, because
-		   there's no need to claim an interface for
-		   this (and therefore we do not yet need to
-		   detach any kernel drivers). */
+		 * device. Note that this is safe, because
+		 * there's no need to claim an interface for
+		 * this (and therefore we do not yet need to
+		 * detach any kernel drivers). */
 
 		free(curDevice->Vendor);
 		free(curDevice->Product);
@@ -359,7 +368,7 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 			libusb_free_device_list(devlist, 1);
 			fatal_with_errno(EXIT_FAILURE, "Out of memory");
 		}
-		sprintf(curDevice->Bus, "%03d", bus_num);
+		snprintf(curDevice->Bus, 4, "%03d", bus_num);
 
 		device_addr = libusb_get_device_address(device);
 		curDevice->Device = (char *)malloc(4);
@@ -369,7 +378,7 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 		}
 		if (device_addr > 0) {
 			/* 0 means not available, e.g. lack of platform support */
-			sprintf(curDevice->Device, "%03d", device_addr);
+			snprintf(curDevice->Device, 4, "%03d", device_addr);
 		} else {
 			if (devnum <= 999) {
 				/* Log visibly so users know their number discovered
@@ -377,7 +386,7 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 				upsdebugx(0, "%s: invalid libusb device address %" PRIu8 ", "
 					"falling back to enumeration order counter %" PRIuSIZE,
 					__func__, device_addr, devnum);
-				sprintf(curDevice->Device, "%03d", (int)devnum);
+				snprintf(curDevice->Device, 4, "%03d", (int)devnum);
 			} else {
 				upsdebugx(1, "%s: invalid libusb device address %" PRIu8,
 					__func__, device_addr);
@@ -394,7 +403,7 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 			fatal_with_errno(EXIT_FAILURE, "Out of memory");
 		}
 		if (bus_port > 0) {
-			sprintf(curDevice->BusPort, "%03d", bus_port);
+			snprintf(curDevice->BusPort, 4, "%03d", bus_port);
 		} else {
 			upsdebugx(1, "%s: invalid libusb bus number %i",
 				__func__, bus_port);
@@ -657,14 +666,14 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 		upsdebugx(3, "HID descriptor length (method 1) %" PRIi32, rdlen1);
 
 		/* SECOND METHOD: find HID descriptor among "extra" bytes of
-		   interface descriptor, i.e., bytes tucked onto the end of
-		   descriptor 2. */
+		 * interface descriptor, i.e., bytes tucked onto the end of
+		 * descriptor 2. */
 
 		/* Note: on some broken UPS's (e.g. Tripp Lite Smart1000LCD),
-			only this second method gives the correct result */
+		 * only this second method gives the correct result */
 
 		/* for now, we always assume configuration 0, interface 0,
-		   altsetting 0, as above. */
+		 * altsetting 0, as above. */
 
 		if_desc = &(conf_desc->interface[usb_subdriver.hid_rep_index].altsetting[0]);
 		for (i = 0; i < if_desc->extra_length; i += if_desc->extra[i]) {
@@ -687,9 +696,9 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 		upsdebugx(3, "HID descriptor length (method 2) %" PRIi32, rdlen2);
 
 		/* when available, always choose the second value, as it
-			seems to be more reliable (it is the one reported e.g. by
-			lsusb). Note: if the need arises, can change this to use
-			the maximum of the two values instead. */
+		 * seems to be more reliable (it is the one reported e.g. by
+		 * lsusb). Note: if the need arises, can change this to use
+		 * the maximum of the two values instead. */
 		if ((curDevice->VendorID == 0x463) && (curDevice->bcdDevice == 0x0202)) {
 			upsdebugx(1, "Eaton device v2.02. Using full report descriptor");
 			rdlens[0] = rdlen1;

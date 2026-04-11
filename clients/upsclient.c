@@ -3,7 +3,7 @@
    Copyright (C)
 	2002	Russell Kroll <rkroll@exploits.org>
 	2008	Arjen de Korte <adkorte-guest@alioth.debian.org>
-	2020 - 2025	Jim Klimov <jimklimov+nut@gmail.com>
+	2020 - 2026	Jim Klimov <jimklimov+nut@gmail.com>
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -39,6 +39,7 @@
 #include <unistd.h>
 
 #ifndef WIN32
+# include <sys/select.h>	/* fd_set and select(); (or sys/time.h on older BSDs) */
 # include <netdb.h>
 # include <sys/socket.h>
 # include <netinet/in.h>
@@ -68,14 +69,14 @@
 #	define SOLARIS_i386_NBCONNECT_ENOENT(status) ( (!strcmp("i386", CPU_TYPE)) ? (ENOENT == (status)) : 0 )
 #else
 #	define SOLARIS_i386_NBCONNECT_ENOENT(status) (0)
-#endif  /* end of Solaris/i386 WA for non-blocking connect */
+#endif	/* end of Solaris/i386 WA for non-blocking connect */
 
 /* WA for AIX bug: non-blocking connect sets errno to 0 */
 #if (defined NUT_PLATFORM_AIX)
 #	define AIX_NBCONNECT_0(status) (0 == (status))
 #else
 #	define AIX_NBCONNECT_0(status) (0)
-#endif  /* end of AIX WA for non-blocking connect */
+#endif	/* end of AIX WA for non-blocking connect */
 
 #ifdef WITH_NSS
 #	include <prerror.h>
@@ -84,17 +85,20 @@
 #	include <prtypes.h>
 #	include <ssl.h>
 #	include <private/pprio.h>
-#endif /* WITH_NSS */
+#endif	/* WITH_NSS */
 
-#define UPSCLIENT_MAGIC 0x19980308
+#define UPSCLIENT_MAGIC	0x19980308
 
 #define SMALLBUF	512
 
 #ifdef SHUT_RDWR
-#define shutdown_how SHUT_RDWR
+#	define shutdown_how	SHUT_RDWR
 #else
-#define shutdown_how 2
+#	define shutdown_how	2
 #endif
+
+#include "nut_version.h"
+static const char *UPSCLI_VERSION = NUT_VERSION_MACRO;
 
 static struct {
 	int	flags;
@@ -160,7 +164,7 @@ static HOST_CERT_t* upscli_find_host_cert(const char* hostname);
 /* Flag for SSL init */
 static int upscli_initialized = 0;
 
-/* 0 means no timeout in upscli_connect() */
+/* 0 means no timeout in upscli_connect(), aka built-in(blocking) default */
 static struct timeval upscli_default_connect_timeout = {0, 0};
 static int upscli_default_connect_timeout_initialized = 0;
 
@@ -200,16 +204,16 @@ static int ssl_error(SSL *ssl, ssize_t ret)
 	switch (e)
 	{
 	case SSL_ERROR_WANT_READ:
-		upslogx(LOG_ERR, "ssl_error() ret=%" PRIiSIZE " SSL_ERROR_WANT_READ", ret);
-		break;
+		upsdebugx(4, "ssl_error() ret=%" PRIiSIZE " SSL_ERROR_WANT_READ", ret);
+		return 0;
 
 	case SSL_ERROR_WANT_WRITE:
-		upslogx(LOG_ERR, "ssl_error() ret=%" PRIiSIZE " SSL_ERROR_WANT_WRITE", ret);
-		break;
+		upsdebugx(4, "ssl_error() ret=%" PRIiSIZE " SSL_ERROR_WANT_WRITE", ret);
+		return 0;
 
 	case SSL_ERROR_SYSCALL:
 		if (ret == 0 && ERR_peek_error() == 0) {
-			upslogx(LOG_ERR, "ssl_error() EOF from client");
+			upslogx(LOG_ERR, "ssl_error() EOF from server");
 		} else {
 			upslogx(LOG_ERR, "ssl_error() ret=%" PRIiSIZE " SSL_ERROR_SYSCALL", ret);
 		}
@@ -236,14 +240,59 @@ static char *nss_password_callback(PK11SlotInfo *slot, PRBool retry,
 	return nsscertpasswd ? PL_strdup(nsscertpasswd) : NULL;
 }
 
-static void nss_error(const char* funcname)
+/** Detail the currently raised NSS error code if possible, and debug-log
+ *  it with caller-provided text (typically the calling function name). */
+static void nss_error(const char* text)
 {
-	char buffer[SMALLBUF];
-	PRInt32 length = PR_GetErrorText(buffer);
-	if (length > 0 && length < SMALLBUF) {
-		upsdebugx(1, "nss_error %ld in %s : %s", (long)PR_GetError(), funcname, buffer);
-	}else{
-		upsdebugx(1, "nss_error %ld in %s", (long)PR_GetError(), funcname);
+	char	err_name_buf[SMALLBUF];
+	PRErrorCode	err_num = PR_GetError();
+	const char	*err_name = PR_ErrorToName(err_num);
+	PRInt32	err_len = PR_GetErrorTextLength();
+
+	if (err_name) {
+		size_t	len = snprintf(err_name_buf, sizeof(err_name_buf), " (%s)", err_name);
+		if (len > sizeof(err_name_buf) - 2) {
+			err_name_buf[sizeof(err_name_buf) - 2] = ')';
+			err_name_buf[sizeof(err_name_buf) - 1] = '\0';
+		}
+	} else {
+		err_name_buf[0] = '\0';
+	}
+
+	if (err_len > 0) {
+		char	*buffer = (char *)calloc(err_len + 1, sizeof(char));
+		if (buffer) {
+			PR_GetErrorText(buffer);
+			upsdebugx(1, "nss_error %ld%s in %s : %s",
+				(long)err_num,
+				err_name_buf,
+				text,
+				buffer);
+			free(buffer);
+		} else {
+			upsdebugx(1, "nss_error %ld%s in %s : "
+				"Failed to allocate internal error buffer "
+				"for detailed error text, needs %ld bytes",
+				(long)err_num,
+				err_name_buf,
+				text,
+				(long)err_len);
+		}
+	} else {
+		/* The code above may be obsolete or not ubiquitous, try another way */
+		const char	*err_text = PR_ErrorToString(err_num, PR_LANGUAGE_I_DEFAULT);
+		if (err_text && *err_text) {
+			upsdebugx(1, "nss_error %ld%s in %s : %s",
+				(long)err_num,
+				err_name_buf,
+				text,
+				err_text);
+		} else {
+			upsdebugx(1, "nss_error %ld%s in %s",
+				(long)err_num,
+				err_name_buf,
+				text);
+		}
 	}
 }
 
@@ -337,20 +386,25 @@ static void HandshakeCallback(PRFileDesc *fd, UPSCONN_t *client_data)
 int upscli_init(int certverify, const char *certpath,
 					const char *certname, const char *certpasswd)
 {
-	const char *quiet_init_ssl;
+	const char	*quiet_init_ssl;
 #ifdef WITH_OPENSSL
-	long ret;
-	int ssl_mode = SSL_VERIFY_NONE;
+	long	ret;
+	int	ssl_mode = SSL_VERIFY_NONE;
+	/* Now these are technically "used" below for the log messaging.
+	 * Keeping macros here to remind devs that these arguments are
+	 * not really used by library code in this variant of the build.
+	 */
 	NUT_UNUSED_VARIABLE(certname);
 	NUT_UNUSED_VARIABLE(certpasswd);
-#elif defined(WITH_NSS) /* WITH_OPENSSL */
+#elif defined(WITH_NSS)	/* WITH_OPENSSL */
 	SECStatus	status;
-#else
+#else	/* neither backend: */
+	/* See comment above */
 	NUT_UNUSED_VARIABLE(certverify);
 	NUT_UNUSED_VARIABLE(certpath);
 	NUT_UNUSED_VARIABLE(certname);
 	NUT_UNUSED_VARIABLE(certpasswd);
-#endif /* WITH_OPENSSL | WITH_NSS */
+#endif	/* WITH_OPENSSL | WITH_NSS */
 
 	if (upscli_initialized == 1) {
 		upslogx(LOG_WARNING, "upscli already initialized");
@@ -378,30 +432,34 @@ int upscli_init(int certverify, const char *certpath,
 
 #ifdef WITH_OPENSSL
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+	if (certname || certpasswd) {
+		upslogx(LOG_ERR, "upscli_init called with 'certname' and/or 'certpasswd' but OpenSSL backend does not use them");
+	}
+
+# if OPENSSL_VERSION_NUMBER < 0x10100000L
 	SSL_load_error_strings();
 	SSL_library_init();
 
 	ssl_ctx = SSL_CTX_new(SSLv23_client_method());
-#else
+# else
 	ssl_ctx = SSL_CTX_new(TLS_client_method());
-#endif
+# endif
 
 	if (!ssl_ctx) {
 		upslogx(LOG_ERR, "Can not initialize SSL context");
 		return -1;
 	}
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L
+# if OPENSSL_VERSION_NUMBER < 0x10100000L
 	/* set minimum protocol TLSv1 */
 	SSL_CTX_set_options(ssl_ctx, SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3);
-#else
+# else
 	ret = SSL_CTX_set_min_proto_version(ssl_ctx, TLS1_VERSION);
 	if (ret != 1) {
 		upslogx(LOG_ERR, "Can not set minimum protocol to TLSv1");
 		return -1;
 	}
-#endif
+# endif
 
 	if (!certpath) {
 		if (certverify == 1) {
@@ -489,19 +547,24 @@ int upscli_init(int certverify, const char *certpath,
 	verify_certificate = certverify;
 #else
 	/* Note: historically we do not return with error here,
+	 * and nowadays have the default timeout handling etc.,
 	 * just fall through to below and treat as initialized.
 	 */
-	upslogx(LOG_ERR, "upscli_init called but SSL wasn't compiled in");
+	if (certverify || certpath || certname || certpasswd) {
+		upslogx(LOG_ERR, "upscli_init called but SSL wasn't compiled in");
+	}
 #endif /* WITH_OPENSSL | WITH_NSS */
 
 	upscli_initialized = 1;
+
+	upsdebugx(1, "%s: completed", __func__);
 	return 1;
 }
 
 void upscli_add_host_cert(const char* hostname, const char* certname, int certverify, int forcessl)
 {
 #ifdef WITH_NSS
-	HOST_CERT_t* cert = xmalloc(sizeof(HOST_CERT_t));
+	HOST_CERT_t* cert = (HOST_CERT_t *)xmalloc(sizeof(HOST_CERT_t));
 	cert->next = first_host_cert;
 	cert->host = xstrdup(hostname);
 	cert->certname = xstrdup(certname);
@@ -513,6 +576,8 @@ void upscli_add_host_cert(const char* hostname, const char* certname, int certve
 	NUT_UNUSED_VARIABLE(certname);
 	NUT_UNUSED_VARIABLE(certverify);
 	NUT_UNUSED_VARIABLE(forcessl);
+
+	upsdebugx(1, "%s: no-op when libupsclient was not built WITH_NSS", __func__);
 #endif /* WITH_NSS */
 }
 
@@ -530,6 +595,8 @@ static HOST_CERT_t* upscli_find_host_cert(const char* hostname)
 	}
 #else
 	NUT_UNUSED_VARIABLE(hostname);
+
+	upsdebugx(4, "%s: no-op when libupsclient was not built WITH_NSS", __func__);
 #endif /* WITH_NSS */
 	return NULL;
 }
@@ -577,7 +644,7 @@ const char *upscli_strerror(UPSCONN_t *ups)
 		return upscli_errlist[UPSCLI_ERR_INVALIDARG].str;
 	}
 
-	if (ups->upserror > UPSCLI_ERR_MAX) {
+	if (ups->upserror < 0 || ups->upserror > UPSCLI_ERR_MAX) {
 		return "Invalid error number";
 	}
 
@@ -593,7 +660,7 @@ const char *upscli_strerror(UPSCONN_t *ups)
 			"%s", strerror(ups->syserrno));
 		return ups->errbuf;
 
-	case 2:		/* SSL error */
+	case 2:		/* SSL error, with 1 arg */
 #ifdef WITH_OPENSSL
 		err = ERR_get_error();
 		if (err) {
@@ -609,12 +676,47 @@ const char *upscli_strerror(UPSCONN_t *ups)
 				"%s", "peer disconnected");
 		}
 #elif defined(WITH_NSS) /* WITH_OPENSSL */
-		if (PR_GetErrorTextLength() < UPSCLI_ERRBUF_LEN) {
-			PR_GetErrorText(ups->errbuf);
+		if (PR_GetErrorTextLength() > 0 && PR_GetErrorTextLength() + strlen(upscli_errlist[ups->upserror].str) < UPSCLI_ERRBUF_LEN) {
+			char	errbuf[UPSCLI_ERRBUF_LEN];
+			memset(errbuf, 0, UPSCLI_ERRBUF_LEN);
+			PR_GetErrorText(errbuf);
+			snprintf_dynamic(
+				ups->errbuf, UPSCLI_ERRBUF_LEN,
+				upscli_errlist[ups->upserror].str,
+				"%s", errbuf);
 		} else {
-			snprintf(ups->errbuf, UPSCLI_ERRBUF_LEN,
-				"SSL error #%ld, message too long to be displayed",
-				(long)PR_GetError());
+			/* Retry with other metods before giving up, see nss_error() */
+			char	err_name_buf[SMALLBUF];
+			PRErrorCode	err_num = PR_GetError();
+			const char	*err_name = PR_ErrorToName(err_num),
+					*err_text = PR_ErrorToString(err_num, PR_LANGUAGE_I_DEFAULT);
+
+			if (err_name) {
+				size_t	len = snprintf(err_name_buf, sizeof(err_name_buf), " (%s)", err_name);
+				if (len > sizeof(err_name_buf) - 2) {
+					err_name_buf[sizeof(err_name_buf) - 2] = ')';
+					err_name_buf[sizeof(err_name_buf) - 1] = '\0';
+				}
+			} else {
+				err_name_buf[0] = '\0';
+			}
+
+			if (err_text && *err_text
+			 && strlen(err_text) + strlen(upscli_errlist[ups->upserror].str) < UPSCLI_ERRBUF_LEN
+			) {
+				snprintf_dynamic(
+					ups->errbuf, UPSCLI_ERRBUF_LEN,
+					upscli_errlist[ups->upserror].str,
+					"%s", err_text);
+				if (err_name && strlen(err_name_buf) + strlen(ups->errbuf) < UPSCLI_ERRBUF_LEN) {
+					strncat(ups->errbuf, err_name_buf, UPSCLI_ERRBUF_LEN - strlen(ups->errbuf) - 1);
+				}
+			} else {
+				snprintf(ups->errbuf, UPSCLI_ERRBUF_LEN,
+					"SSL error #%ld, message too %s to be displayed",
+					(long)PR_GetError(),
+					PR_GetErrorTextLength() > 0 ? "long" : "short");
+			}
 		}
 #else
 		snprintf(ups->errbuf, UPSCLI_ERRBUF_LEN,
@@ -653,16 +755,26 @@ static ssize_t upscli_select_read(const int fd, void *buf, const size_t buflen, 
 	FD_ZERO(&fds);
 	FD_SET(fd, &fds);
 
+	upsdebugx(6, "%s: will wait on select() for up to %" PRIuMAX ".%" PRIuMAX " seconds",
+		__func__, (uintmax_t)d_sec, (uintmax_t)d_usec);
 	tv.tv_sec = d_sec;
 	tv.tv_usec = d_usec;
 
+	errno = 0;
 	ret = select(fd + 1, &fds, NULL, NULL, &tv);
 
 	if (ret < 1) {
+		upsdebug_with_errno(3, "%s: select() failed: %" PRIiSIZE, __func__, ret);
 		return ret;
 	}
 
-	return read(fd, buf, buflen);
+	errno = 0;
+	ret = read(fd, buf, buflen);
+	if (ret < 1) {
+		upsdebug_with_errno(3, "%s: read() failed: %" PRIiSIZE, __func__, ret);
+	}
+
+	return ret;
 }
 
 #if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP_BESIDEFUNC) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS_BESIDEFUNC) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE_BESIDEFUNC) )
@@ -681,42 +793,109 @@ static ssize_t net_read(UPSCONN_t *ups, char *buf, size_t buflen, const time_t t
 
 #ifdef WITH_SSL
 	if (ups->ssl) {
-#ifdef WITH_OPENSSL
+# ifdef WITH_OPENSSL
+		int	iret, ssl_err, ssl_retries = 0;
+		/* Cap retries to avoid spinning forever on a broken socket.
+		 * 250 * 20 ms = 5 s maximum wait, which is generous for a
+		 * local handshake while being safe for CI timeouts.
+		 */
+		const int	SSL_IO_MAX_RETRIES = 250;
+		fd_set	fds;
+		struct timeval	tv;
+
 		/* SSL_* routines deal with int type for return and buflen
 		 * We might need to window our I/O if we exceed 2GB (in
 		 * 32-bit builds)... Not likely to exceed in 64-bit builds,
 		 * but smaller systems with 16-bits might be endangered :)
 		 */
-		int iret;
 		assert(buflen <= INT_MAX);
-		iret = SSL_read(ups->ssl, buf, (int)buflen);
-		assert(iret <= SSIZE_MAX);
-		ret = (ssize_t)iret;
-#elif defined(WITH_NSS) /* WITH_OPENSSL */
+
+		while (ssl_retries < SSL_IO_MAX_RETRIES) {
+			iret = SSL_read(ups->ssl, buf, (int)buflen);
+
+			assert(iret <= SSIZE_MAX);
+			if (iret > 0) {
+				ret = (ssize_t)iret;
+				break;
+			}
+
+			if (iret == 0) {
+				/* Orderly shutdown or actual EOF */
+				ret = 0;
+				break;
+			}
+
+			ssl_err = SSL_get_error(ups->ssl, iret);
+			if (ssl_err == SSL_ERROR_WANT_READ
+			 || ssl_err == SSL_ERROR_WANT_WRITE
+			) {
+				FD_ZERO(&fds);
+				FD_SET(ups->fd, &fds);
+				tv.tv_sec  = 0;
+				tv.tv_usec = 20000;	/* 20 ms */
+
+				if (select(ups->fd + 1,
+					(ssl_err == SSL_ERROR_WANT_READ)  ? &fds : NULL,
+					(ssl_err == SSL_ERROR_WANT_WRITE) ? &fds : NULL,
+					NULL, &tv) < 0
+				) {
+					/* select failure is fatal enough to stop retrying */
+					upsdebugx(3, "%s: SSL_read and subsequent select() failed", __func__);
+					ssl_error(ups->ssl, (ssize_t)iret);
+					ups->upserror = UPSCLI_ERR_SSLERR;
+					return -1;
+				}
+				ssl_retries++;
+				continue;
+			}
+
+			/* Other errors are fatal */
+			upsdebugx(3, "%s: SSL_read failed: %" PRIiSIZE, __func__, (ssize_t)iret);
+			ssl_error(ups->ssl, (ssize_t)iret);
+			ups->upserror = UPSCLI_ERR_SSLERR;
+			return -1;
+		}
+
+		if (ssl_retries >= SSL_IO_MAX_RETRIES) {
+			upslogx(LOG_ERR, "%s: SSL_read timed out after %d retries", __func__, ssl_retries);
+			ups->upserror = UPSCLI_ERR_SSLERR;
+			return -1;
+		}
+
+		if (ret < 1) {
+			upsdebugx(3, "%s: SSL_read failed: %" PRIiSIZE, __func__, ret);
+		}
+# elif defined(WITH_NSS) /* WITH_OPENSSL */
 		/* PR_* routines deal in PRInt32 type
 		 * We might need to window our I/O if we exceed 2GB :) */
 		assert(buflen <= PR_INT32_MAX);
 		ret = PR_Read(ups->ssl, buf, (PRInt32)buflen);
-#endif	/* WITH_OPENSSL | WITH_NSS*/
+		if (ret < 1) {
+			upsdebugx(3, "%s: PR_read failed: %" PRIiSIZE, __func__, ret);
+		}
+# endif	/* WITH_OPENSSL | WITH_NSS*/
 
 		if (ret < 1) {
 			ups->upserror = UPSCLI_ERR_SSLERR;
 		}
 
 		return ret;
-	}
-#endif
+	}	/* end of: if (ups->ssl) */
+#endif	/* WITH_SSL */
 
+	/* Plaintext read */
 	ret = upscli_select_read(ups->fd, buf, buflen, timeout, 0);
 
 	/* error reading data, server disconnected? */
 	if (ret < 0) {
+		upsdebugx(3, "%s: upscli_select_read failed: %" PRIiSIZE, __func__, ret);
 		ups->upserror = UPSCLI_ERR_READ;
 		ups->syserrno = errno;
 	}
 
 	/* no data available, server disconnected? */
 	if (ret == 0) {
+		upsdebugx(3, "%s: upscli_select_read failed (disconnected?): %" PRIiSIZE, __func__, ret);
 		ups->upserror = UPSCLI_ERR_SRVDISC;
 	}
 
@@ -741,13 +920,21 @@ static ssize_t upscli_select_write(const int fd, const void *buf, const size_t b
 	tv.tv_sec = d_sec;
 	tv.tv_usec = d_usec;
 
+	errno = 0;
 	ret = select(fd + 1, NULL, &fds, NULL, &tv);
 
 	if (ret < 1) {
+		upsdebug_with_errno(3, "%s: select() failed: %" PRIiSIZE, __func__, ret);
 		return ret;
 	}
 
-	return write(fd, buf, buflen);
+	errno = 0;
+	ret = write(fd, buf, buflen);
+	if (ret < 1) {
+		upsdebug_with_errno(3, "%s: write() failed: %" PRIiSIZE, __func__, ret);
+	}
+
+	return ret;
 }
 
 #if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP_BESIDEFUNC) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS_BESIDEFUNC) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE_BESIDEFUNC) )
@@ -766,42 +953,103 @@ static ssize_t net_write(UPSCONN_t *ups, const char *buf, size_t buflen, const t
 
 #ifdef WITH_SSL
 	if (ups->ssl) {
-#ifdef WITH_OPENSSL
+# ifdef WITH_OPENSSL
+		int	iret, ssl_err, ssl_retries = 0;
+		/* Cap retries to avoid spinning forever on a broken socket.
+		 * 250 * 20 ms = 5 s maximum wait, which is generous for a
+		 * local handshake while being safe for CI timeouts.
+		 */
+		const int	SSL_IO_MAX_RETRIES = 250;
+		fd_set	fds;
+		struct timeval	tv;
+
 		/* SSL_* routines deal with int type for return and buflen
 		 * We might need to window our I/O if we exceed 2GB (in
 		 * 32-bit builds)... Not likely to exceed in 64-bit builds,
 		 * but smaller systems with 16-bits might be endangered :)
 		 */
-		int iret;
 		assert(buflen <= INT_MAX);
-		iret = SSL_write(ups->ssl, buf, (int)buflen);
-		assert(iret <= SSIZE_MAX);
-		ret = (ssize_t)iret;
-#elif defined(WITH_NSS) /* WITH_OPENSSL */
+
+		while (ssl_retries < SSL_IO_MAX_RETRIES) {
+			iret = SSL_write(ups->ssl, buf, (int)buflen);
+
+			assert(iret <= SSIZE_MAX);
+			if (iret > 0) {
+				ret = (ssize_t)iret;
+				break;
+			}
+
+			ssl_err = SSL_get_error(ups->ssl, iret);
+			if (ssl_err == SSL_ERROR_WANT_READ
+			 || ssl_err == SSL_ERROR_WANT_WRITE
+			) {
+				FD_ZERO(&fds);
+				FD_SET(ups->fd, &fds);
+				tv.tv_sec  = 0;
+				tv.tv_usec = 20000;	/* 20 ms */
+
+				if (select(ups->fd + 1,
+					(ssl_err == SSL_ERROR_WANT_READ)  ? &fds : NULL,
+					(ssl_err == SSL_ERROR_WANT_WRITE) ? &fds : NULL,
+					NULL, &tv) < 0
+				) {
+					/* select failure is fatal enough to stop retrying */
+					upsdebugx(3, "%s: SSL_write and subsequent select() failed", __func__);
+					ssl_error(ups->ssl, (ssize_t)iret);
+					ups->upserror = UPSCLI_ERR_SSLERR;
+					return -1;
+				}
+				ssl_retries++;
+				continue;
+			}
+
+			/* Other errors (including iret=0) are fatal */
+			upsdebugx(3, "%s: SSL_write failed: %" PRIiSIZE, __func__, (ssize_t)iret);
+			ssl_error(ups->ssl, (ssize_t)iret);
+			ups->upserror = UPSCLI_ERR_SSLERR;
+			return -1;
+		}
+
+		if (ssl_retries >= SSL_IO_MAX_RETRIES) {
+			upslogx(LOG_ERR, "%s: SSL_write timed out after %d retries", __func__, ssl_retries);
+			ups->upserror = UPSCLI_ERR_SSLERR;
+			return -1;
+		}
+
+		if (ret < 1) {
+			upsdebugx(3, "%s: SSL_write failed: %" PRIiSIZE, __func__, ret);
+		}
+# elif defined(WITH_NSS) /* WITH_OPENSSL */
 		/* PR_* routines deal in PRInt32 type
 		 * We might need to window our I/O if we exceed 2GB :) */
 		assert(buflen <= PR_INT32_MAX);
 		ret = PR_Write(ups->ssl, buf, (PRInt32)buflen);
-#endif /* WITH_OPENSSL | WITH_NSS */
+		if (ret < 1) {
+			upsdebugx(3, "%s: PR_write failed: %" PRIiSIZE, __func__, ret);
+		}
+# endif /* WITH_OPENSSL | WITH_NSS */
 
 		if (ret < 1) {
 			ups->upserror = UPSCLI_ERR_SSLERR;
 		}
 
 		return ret;
-	}
-#endif
+	}	/* end of: if (ups->ssl) */
+#endif	/* WITH_SSL */
 
+	/* Plaintext write */
 	ret = upscli_select_write(ups->fd, buf, buflen, timeout, 0);
 
 	/* error writing data, server disconnected? */
 	if (ret < 0) {
+		upsdebugx(3, "%s: upscli_select_write failed: %" PRIiSIZE, __func__, ret);
 		ups->upserror = UPSCLI_ERR_WRITE;
 		ups->syserrno = errno;
 	}
 
 	/* not ready for writing, server disconnected? */
 	if (ret == 0) {
+		upsdebugx(3, "%s: upscli_select_write failed (disconnected?): %" PRIiSIZE, __func__, ret);
 		ups->upserror = UPSCLI_ERR_SRVDISC;
 	}
 
@@ -811,23 +1059,30 @@ static ssize_t net_write(UPSCONN_t *ups, const char *buf, size_t buflen, const t
 # pragma GCC diagnostic pop
 #endif
 
-
-#ifdef WITH_SSL
-
 /*
- * 1 : OK
+ * 1  : OK
  * -1 : ERROR
- * 0 : SSL NOT SUPPORTED
+ * 0  : SSL NOT SUPPORTED (whether by library or by server)
  */
 static int upscli_sslinit(UPSCONN_t *ups, int verifycert)
 {
-#ifdef WITH_OPENSSL
+#ifndef WITH_SSL
+	NUT_UNUSED_VARIABLE(ups);
+	NUT_UNUSED_VARIABLE(verifycert);
+
+	upsdebugx(1, "%s: no-op when libupsclient was not built WITH_SSL", __func__);
+
+	return 0;	/* not supported */
+
+#else	/* WITH_SSL */
+
+# ifdef WITH_OPENSSL
 	int res;
-#elif defined(WITH_NSS) /* WITH_OPENSSL */
+# elif defined(WITH_NSS) /* WITH_OPENSSL */
 	SECStatus	status;
 	PRFileDesc	*socket;
 	HOST_CERT_t *cert;
-#endif /* WITH_OPENSSL | WITH_NSS */
+# endif /* WITH_OPENSSL | WITH_NSS */
 	char	buf[UPSCLI_NETBUF_LEN];
 
 	/* Intend to initialize upscli with no ssl db if not already done.
@@ -839,38 +1094,49 @@ static int upscli_sslinit(UPSCONN_t *ups, int verifycert)
 		upscli_init(0, NULL, NULL, NULL);
 	}
 
+	upsdebugx(3, "%s: Trying to STARTTLS", __func__);
 	/* see if upsd even talks SSL/TLS */
 	snprintf(buf, sizeof(buf), "STARTTLS\n");
 
 	if (upscli_sendline(ups, buf, strlen(buf)) != 0) {
+		upsdebugx(3, "%s: STARTTLS not established, failed to send request: %s",
+			__func__, upscli_strerror(ups));
 		return -1;
 	}
 
 	if (upscli_readline(ups, buf, sizeof(buf)) != 0) {
+		upsdebugx(3, "%s: STARTTLS not established, failed to read response: %s",
+			__func__, upscli_strerror(ups));
 		return -1;
 	}
 
-	if (strncmp(buf, "OK STARTTLS", 11) != 0) {
+	if (strncmp(buf, "ERR ", 4) == 0) {
+		upsdebugx(3, "%s: STARTTLS not supported or init error: %s", __func__, buf);
 		return 0;		/* not supported */
 	}
 
-	/* upsd is happy, so let's crank up the client */
+	if (strncmp(buf, "OK STARTTLS", 11) != 0) {
+		upsdebugx(3, "%s: STARTTLS not supported, unexpected response: %s", __func__, buf);
+		return 0;		/* not supported */
+	}
 
-#ifdef WITH_OPENSSL
+	/* upsd is happy and said OK, so let's crank up the client */
+
+# ifdef WITH_OPENSSL
 
 	if (!ssl_ctx) {
-		upsdebugx(3, "SSL context is not available");
+		upsdebugx(3, "%s: SSL context is not available", __func__);
 		return 0;
 	}
 
 	ups->ssl = SSL_new(ssl_ctx);
 	if (!ups->ssl) {
-		upsdebugx(3, "Can not create SSL socket");
+		upsdebugx(3, "%s: Can not create SSL socket", __func__);
 		return 0;
 	}
 
 	if (SSL_set_fd(ups->ssl, ups->fd) != 1) {
-		upsdebugx(3, "Can not bind file descriptor to SSL socket");
+		upsdebugx(3, "%s: Can not bind file descriptor to SSL socket", __func__);
 		return -1;
 	}
 
@@ -880,25 +1146,116 @@ static int upscli_sslinit(UPSCONN_t *ups, int verifycert)
 		SSL_set_verify(ups->ssl, SSL_VERIFY_NONE, NULL);
 	}
 
-	res = SSL_connect(ups->ssl);
-	switch(res)
+	/* SSL_connect() on a non-blocking socket requires a retry loop.
+	 * When SSL_connect() returns -1 with SSL_ERROR_WANT_READ or
+	 * SSL_ERROR_WANT_WRITE it is signalling a non-fatal "not done yet"
+	 * condition: the TLS handshake needs more I/O turns to complete.
+	 * The correct response is to wait for the fd to become ready in the
+	 * indicated direction and call SSL_connect() again with the SAME ssl
+	 * object (per OpenSSL docs for all versions >= 0.9.x).
+	 *
+	 * On Linux the loopback is fast enough that the handshake nearly always
+	 * completes in a single call, masking this requirement.  On BSD, macOS,
+	 * illumos/OmniOS/OpenIndiana and other non-Linux platforms the loopback
+	 * socket behaviour differs enough that WANT_READ/WANT_WRITE are returned
+	 * regularly, causing the previous single-shot code to treat a transient
+	 * condition as a fatal error and tear down the connection.
+	 *
+	 * The retry behaviour and the SSL_ERROR_WANT_* codes are identical
+	 * across all supported OpenSSL versions (0.9.x, 1.0.x, 1.1.x, 3.x):
+	 * the API contract has never changed in this regard.
+	 */
 	{
-	case 1:
-		upsdebugx(3, "SSL connected (%s)", SSL_get_version(ups->ssl));
-		break;
-	case 0:
-		upsdebug_with_errno(1, "SSL_connect do not accept handshake.");
-		ssl_error(ups->ssl, res);
-		return -1;
-	default:
-		upsdebug_with_errno(1, "Unknown return value from SSL_connect %d", res);
-		ssl_error(ups->ssl, res);
-		return -1;
+		int	ssl_err;
+		int	ssl_retries = 0;
+		/* Cap retries to avoid spinning forever on a broken socket.
+		 * 250 * 20 ms = 5 s maximum wait, which is generous for a
+		 * local handshake while being safe for CI timeouts.
+		 */
+		const int	SSL_IO_MAX_RETRIES = 250;
+		fd_set	fds;
+		struct timeval	tv;
+
+		res = -1;
+		while (ssl_retries < SSL_IO_MAX_RETRIES) {
+			res = SSL_connect(ups->ssl);
+
+			if (res == 1) {
+				upsdebugx(3, "%s: SSL connected (%s)",
+					__func__, SSL_get_version(ups->ssl));
+				break;
+			}
+
+			ssl_err = SSL_get_error(ups->ssl, res);
+
+			if (ssl_err == SSL_ERROR_WANT_READ
+			 || ssl_err == SSL_ERROR_WANT_WRITE
+			) {
+				/* Non-fatal: handshake needs another I/O turn.
+				 * Wait up to 20 ms for the fd to be ready, then
+				 * retry SSL_connect() with the same ssl object. */
+				FD_ZERO(&fds);
+				FD_SET(ups->fd, &fds);
+				tv.tv_sec  = 0;
+				tv.tv_usec = 20000;	/* 20 ms */
+
+				upsdebugx(4,
+					"%s: SSL_connect WANT_%s, retry %d/%d",
+					__func__,
+					(ssl_err == SSL_ERROR_WANT_READ)
+						? "READ" : "WRITE",
+					ssl_retries + 1,
+					SSL_IO_MAX_RETRIES);
+
+				if (select(ups->fd + 1,
+					(ssl_err == SSL_ERROR_WANT_READ)  ? &fds : NULL,
+					(ssl_err == SSL_ERROR_WANT_WRITE) ? &fds : NULL,
+					NULL, &tv) < 0
+				) {
+					upsdebug_with_errno(1,
+						"%s: select() failed during SSL_connect",
+						__func__);
+					/* Returns 0 on non-fatal WANT_READ/WRITE;
+					 * we stop retrying even if non-fatal because
+					 * select() itself failed. */
+					ssl_error(ups->ssl, res);
+					return -1;
+				}
+				ssl_retries++;
+				continue;
+			}
+
+			/* Any other error is fatal */
+			if (res == 0) {
+				upsdebug_with_errno(1,
+					"%s: SSL_connect did not accept handshake"
+					" (SSL_ERROR %d)",
+					__func__, ssl_err);
+			} else {
+				upsdebug_with_errno(1,
+					"%s: SSL_connect failed"
+					" (SSL_ERROR %d)",
+					__func__, ssl_err);
+			}
+			ssl_error(ups->ssl, res);
+			return -1;
+		}
+
+		if (ssl_retries >= SSL_IO_MAX_RETRIES) {
+			upslogx(LOG_ERR,
+				"%s: SSL_connect timed out after %d retries"
+				" (non-blocking handshake never completed)",
+				__func__, ssl_retries);
+			ssl_error(ups->ssl, res);
+			return -1;
+		}
 	}
+
+	upsdebugx(3, "%s: Succeeded to STARTTLS (OpenSSL)", __func__);
 
 	return 1;
 
-#elif defined(WITH_NSS) /* WITH_OPENSSL */
+# elif defined(WITH_NSS) /* WITH_OPENSSL */
 
 	socket = PR_ImportTCPSocket(ups->fd);
 	if (socket == NULL){
@@ -985,22 +1342,13 @@ static int upscli_sslinit(UPSCONN_t *ups, int verifycert)
 		return -1;
 	}
 
+	upsdebugx(3, "%s: Succeeded to STARTTLS (NSS)", __func__);
+
 	return 1;
 
-#endif /* WITH_OPENSSL | WITH_NSS */
-}
-
-#else /* WITH_SSL */
-
-static int upscli_sslinit(UPSCONN_t *ups, int verifycert)
-{
-	NUT_UNUSED_VARIABLE(ups);
-	NUT_UNUSED_VARIABLE(verifycert);
-
-	return 0;	/* not supported */
-}
-
+# endif /* WITH_OPENSSL | WITH_NSS */
 #endif /* WITH_SSL */
+}
 
 int upscli_tryconnect(UPSCONN_t *ups, const char *host, uint16_t port, int flags, struct timeval * timeout)
 {
@@ -1019,9 +1367,16 @@ int upscli_tryconnect(UPSCONN_t *ups, const char *host, uint16_t port, int flags
 	HANDLE event = NULL;
 	unsigned long argp;
 
-	WSADATA WSAdata;
-	WSAStartup(2,&WSAdata);
+	/* Required ritual before calling any socket functions */
+	static WSADATA	WSAdata;
+	static int	WSA_Started = 0;
+	if (!WSA_Started) {
+		WSAStartup(2, &WSAdata);
+		atexit((void(*)(void))WSACleanup);
+		WSA_Started = 1;
+	}
 #endif	/* WIN32 */
+
 	if (!ups) {
 		return -1;
 	}
@@ -1160,13 +1515,15 @@ int upscli_tryconnect(UPSCONN_t *ups, const char *host, uint16_t port, int flags
 			close(sock_fd);
 			/* if timeout, break out so client can continue */
 			/* match Linux behavior that updates timeout struct */
-			if (timeout != NULL &&
-			    ups->upserror == UPSCLI_ERR_CONNFAILURE &&
-			    ups->syserrno == ETIMEDOUT
+			if (timeout != NULL
+			 && ups->upserror == UPSCLI_ERR_CONNFAILURE
+			 && ups->syserrno == ETIMEDOUT
 			) {
-				const char	*addrstr = inet_ntopAI(ai);
+				const char	*addrstr = xinet_ntopAI(ai);
 				upslogx(LOG_WARNING, "%s: Connection to host timed out: '%s'",
 					__func__, (addrstr && *addrstr) ? addrstr : NUT_STRARG(host));
+				if (addrstr)
+					free((char*)addrstr);
 				break;
 			}
 			continue;
@@ -1243,7 +1600,9 @@ int upscli_tryconnect(UPSCONN_t *ups, const char *host, uint16_t port, int flags
 			upslogx(LOG_INFO, "Connected to NUT server %s in SSL", host);
 			if (certverify == 0) {
 				/* you REALLY should set CERTVERIFY to 1 if using SSL... */
-				upslogx(LOG_WARNING, "Certificate verification is disabled");
+				upslogx(LOG_WARNING, "Certificate verification (by client) is disabled");
+			} else {
+				upsdebugx(1, "Certificate verification (by client) is enabled, and apparently succeeded");
 			}
 		}
 	}
@@ -1544,7 +1903,7 @@ int upscli_list_next(UPSCONN_t *ups, size_t numq, const char **query,
 	return 1;
 }
 
-ssize_t upscli_sendline_timeout(UPSCONN_t *ups, const char *buf, size_t buflen, const time_t timeout)
+ssize_t upscli_sendline_timeout_may_disconnect(UPSCONN_t *ups, const char *buf, size_t buflen, const time_t timeout, int may_disconnect)
 {
 	ssize_t	ret;
 
@@ -1570,11 +1929,21 @@ ssize_t upscli_sendline_timeout(UPSCONN_t *ups, const char *buf, size_t buflen, 
 	ret = net_write(ups, buf, buflen, timeout);
 
 	if (ret < 1) {
-		upscli_disconnect(ups);
+		if (may_disconnect) {
+			upsdebugx(3, "%s: net_write() returned %" PRIiSIZE ", disconnecting", __func__, ret);
+			upscli_disconnect(ups);
+		} else {
+			upsdebugx(3, "%s: net_write() returned %" PRIiSIZE ", keeping connection open as caller wants it", __func__, ret);
+		}
 		return -1;
 	}
 
 	return 0;
+}
+
+ssize_t upscli_sendline_timeout(UPSCONN_t *ups, const char *buf, size_t buflen, const time_t timeout)
+{
+	return upscli_sendline_timeout_may_disconnect(ups, buf, buflen, timeout, 1);
 }
 
 ssize_t upscli_sendline(UPSCONN_t *ups, const char *buf, size_t buflen)
@@ -1582,7 +1951,7 @@ ssize_t upscli_sendline(UPSCONN_t *ups, const char *buf, size_t buflen)
 	return upscli_sendline_timeout(ups, buf, buflen, 0);
 }
 
-ssize_t upscli_readline_timeout(UPSCONN_t *ups, char *buf, size_t buflen, const time_t timeout)
+ssize_t upscli_readline_timeout_may_disconnect(UPSCONN_t *ups, char *buf, size_t buflen, const time_t timeout, int may_disconnect)
 {
 	ssize_t	ret;
 	size_t	recv;
@@ -1613,7 +1982,12 @@ ssize_t upscli_readline_timeout(UPSCONN_t *ups, char *buf, size_t buflen, const 
 			ret = net_read(ups, ups->readbuf, sizeof(ups->readbuf), timeout);
 
 			if (ret < 1) {
-				upscli_disconnect(ups);
+				if (may_disconnect) {
+					upsdebugx(3, "%s: net_read() returned %" PRIiSIZE ", disconnecting", __func__, ret);
+					upscli_disconnect(ups);
+				} else {
+					upsdebugx(3, "%s: net_read() returned %" PRIiSIZE ", keeping connection open as caller wants it", __func__, ret);
+				}
 				return -1;
 			}
 
@@ -1633,6 +2007,11 @@ ssize_t upscli_readline_timeout(UPSCONN_t *ups, char *buf, size_t buflen, const 
 
 	buf[recv] = '\0';
 	return 0;
+}
+
+ssize_t upscli_readline_timeout(UPSCONN_t *ups, char *buf, size_t buflen, const time_t timeout)
+{
+	return upscli_readline_timeout_may_disconnect(ups, buf, buflen, timeout, 1);
 }
 
 ssize_t upscli_readline(UPSCONN_t *ups, char *buf, size_t buflen)
@@ -1694,7 +2073,7 @@ int upscli_splitname(const char *buf, char **upsname, char **hostname, uint16_t 
 			return -1;
 		}
 
-		*port = PORT;
+		*port = NUT_PORT;
 		return 0;
 	}
 
@@ -1750,7 +2129,7 @@ int upscli_splitaddr(const char *buf, char **hostname, uint16_t *port)
 
 		/* no port specified, use default */
 		if (((s = strtok_r(NULL, "\0", &last)) == NULL) || (*s != ':')) {
-			*port = PORT;
+			*port = NUT_PORT;
 			return 0;
 		}
 	} else {
@@ -1763,7 +2142,7 @@ int upscli_splitaddr(const char *buf, char **hostname, uint16_t *port)
 
 		/* no port specified, use default */
 		if (s == NULL) {
-			*port = PORT;
+			*port = NUT_PORT;
 			return 0;
 		}
 	}
@@ -1786,6 +2165,8 @@ int upscli_splitaddr(const char *buf, char **hostname, uint16_t *port)
 
 int upscli_disconnect(UPSCONN_t *ups)
 {
+	char	tmp[UPSCLI_NETBUF_LEN];
+
 	if (!ups) {
 		return -1;
 	}
@@ -1805,19 +2186,37 @@ int upscli_disconnect(UPSCONN_t *ups)
 
 	net_write(ups, "LOGOUT\n", 7, 0);
 
+	/* Give it a bit of time to gracefully close connections,
+	 * drain the buffer and avoid noise in logs of upsd like:
+	 *   write() failed for 127.0.0.1: Transport endpoint is not connected
+	 */
+	memset(tmp, 0, sizeof(tmp));
+	if (net_read(ups, tmp, sizeof(tmp), DEFAULT_NETWORK_TIMEOUT) > 0) {
+		if (!strcmp(tmp, "OK Goodbye\n")) {
+			/* There may be trailing garbage from the buffer after the newline, not sure why */
+			upsdebugx(1, "%s: We logged out, and server said '%s' nicely, as expected", __func__, tmp);
+		} else if (!strncmp(tmp, "OK", 2)) {
+			upsdebugx(1, "%s: We logged out, and server said '%s' nicely, good enough", __func__, tmp);
+		} else {
+			upsdebugx(1, "%s: We logged out, and server said '%s', not OK but oh well", __func__, tmp);
+		}
+	} else {
+		upsdebugx(1, "%s: We logged out, and server did not reply in a short time frame", __func__);
+	}
+
 #ifdef WITH_OPENSSL
 	if (ups->ssl) {
 		SSL_shutdown(ups->ssl);
 		SSL_free(ups->ssl);
 		ups->ssl = NULL;
 	}
-#elif defined(WITH_NSS) /* WITH_OPENSSL */
+#elif defined(WITH_NSS) /* !WITH_OPENSSL */
 	if (ups->ssl) {
 		PR_Shutdown(ups->ssl, PR_SHUTDOWN_BOTH);
 		PR_Close(ups->ssl);
 		ups->ssl = NULL;
 	}
-#endif /* WITH_OPENSSL | WITH_NSS */
+#endif	/* WITH_OPENSSL | WITH_NSS */
 
 	shutdown(ups->fd, shutdown_how);
 
@@ -1867,9 +2266,58 @@ int upscli_ssl(UPSCONN_t *ups)
 	if (ups->ssl) {
 		return 1;
 	}
-#endif /* WITH_SSL */
+#endif	/* WITH_SSL */
 
 	return 0;
+}
+
+/* Return a bitmap of the abilities for the current libupsclient build */
+int upscli_ssl_caps(void)
+{
+	int	ret = UPSCLI_SSL_CAPS_NONE;
+
+#ifdef WITH_SSL
+# ifdef WITH_OPENSSL
+	ret |= UPSCLI_SSL_CAPS_OPENSSL;
+# endif
+# ifdef WITH_NSS
+	ret |= UPSCLI_SSL_CAPS_NSS;
+# endif
+#endif	/* WITH_SSL */
+
+	return ret;
+}
+
+/* String version (English) for program help banners etc. */
+const char *upscli_ssl_caps_descr(void)
+{
+	static const char	*ret = "with"
+#ifndef WITH_SSL
+		"out SSL support";
+#else	/* WITH_SSL */
+		" SSL support: "
+# ifdef WITH_OPENSSL
+		"OpenSSL"
+#  ifdef WITH_NSS
+	/* Not likely we'd get here, but... */
+		" and "
+#  endif
+# endif
+# ifdef WITH_NSS
+		"Mozilla NSS"
+# endif
+# if !(defined WITH_NSS) && !(defined WITH_OPENSSL)
+		"oddly undefined"
+# endif
+		;
+#endif	/* WITH_SSL */
+
+	return ret;
+}
+
+void upscli_report_build_details(void)
+{
+	upsdebugx(1, "Using NUT libupsclient library version %s built %s", UPSCLI_VERSION, upscli_ssl_caps_descr());
 }
 
 int upscli_set_default_connect_timeout(const char *secs) {
@@ -1906,7 +2354,7 @@ void upscli_get_default_connect_timeout(struct timeval *ptv) {
 }
 
 int upscli_init_default_connect_timeout(const char *cli_secs, const char *config_secs, const char *default_secs) {
-	const char	*envvar_secs, *cause = "built-in";
+	const char	*envvar_secs, *cause = "built-in(blocking)";
 	int	failed = 0, applied = 0;
 
 	/* First the very default: blocking connections as we always had */
@@ -1963,7 +2411,7 @@ int upscli_init_default_connect_timeout(const char *cli_secs, const char *config
 	}
 
 	upsdebugx(1, "%s: upscli_default_connect_timeout=%" PRIiMAX
-		 ".%06" PRIiMAX " sec assigned from: %s",
+		".%06" PRIiMAX " sec assigned from: %s",
 		__func__, (intmax_t)upscli_default_connect_timeout.tv_sec,
 		(intmax_t)upscli_default_connect_timeout.tv_usec, cause);
 
@@ -1993,4 +2441,68 @@ int	upscli_str_add_unique_token(char *tgt, size_t tgtsize, const char *token,
 				int (*callback_unique)(char *, size_t, const char *)
 ) {
 	return str_add_unique_token(tgt, tgtsize, token, callback_always, callback_unique);
+}
+
+/* On some platforms, libupsclient builds tend to get a built-in copy
+ * of the internal code from NUT libcommon library, so for NUT client
+ * programs using both libraries as dynamically-linked shared code,
+ * the nut_debug_level setting is backed by independent variables in
+ * active memory, and upsdebugx() calls suffer if the library's copy
+ * is never changed from zero.
+ */
+
+/* privately exported from common.c for internal libs */
+const char *setproctag_lib_once(const char *val);
+
+const void *upscli_upslog_cookie(void)
+{
+	return nut_common_cookie();
+}
+
+void upscli_upslog_set_debug_level(int lvl, const void *cookie)
+{
+	nut_debug_level = lvl;
+
+	if (cookie == upscli_upslog_cookie())
+		return;
+
+	setproctag_lib_once("libupsclient");
+}
+
+int upscli_upslog_get_debug_level(void)
+{
+	return nut_debug_level;
+}
+
+/* Avoid re-querying /proc or equivalent and logging about it,
+ * if the caller is a NUT program that already knows its name:
+ * see getmyprocname() in NUT common library */
+void upscli_upslog_setprocname(const char *pn, const void *cookie)
+{
+	if (cookie != upscli_upslog_cookie())
+		setproctag_lib_once("libupsclient");
+
+	setmyprocname(pn);
+}
+
+void upscli_upslog_setproctag(const char *tag, const void *cookie)
+{
+	if (cookie != upscli_upslog_cookie())
+		setproctag_lib_once("libupsclient");
+
+	setproctag(tag);
+}
+
+const char *upscli_upslog_getproctag(void)
+{
+	return getproctag();
+}
+
+struct timeval *upscli_upslog_start_sync(struct timeval *tv, const void *cookie)
+{
+	if (cookie != upscli_upslog_cookie())
+		setproctag_lib_once("libupsclient");
+
+	/* No-op if internal tv equals passed tv */
+	return upslog_start_sync(tv);
 }

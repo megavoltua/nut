@@ -31,7 +31,7 @@ EXTRA_DIST =
 # generated once (can take a looong while), settled into place, and only then
 # we revisit them for html/pdf rendering (another long while) without randomly
 # confusing the system with new timestamps and needless regenerations later on.
-all:
+all: @dotMAKE@
 	@echo "  DOC-FOLLOW-UP	Basic 'make $@' in `pwd` is done, following up with 'make doc' to ensure complex document types"
 	+@$(MAKE) $(AM_MAKEFLAGS) doc
 
@@ -50,7 +50,9 @@ IMAGE_FILES = \
 	images/asciidoc.png \
 	images/hostedby.png \
 	images/nut_layering.png \
-	images/nut-logo.png \
+	images/nut-logo.svg \
+	images/nut-logo-60x60.png \
+	images/nut-logo-256x256.png \
 	images/note.png \
 	images/warning.png \
 	images/blue-arrow.png \
@@ -74,6 +76,9 @@ IMAGE_LOGO_FILES = \
 	images/ci/gandi-ar21.svg \
 	images/ci/GitHub-Mark-140pxW.png \
 	images/ci/GitHub-Mark-ea2971cee799.png \
+	images/ci/obs-logo.png \
+	images/ci/obs-logo.svg \
+	images/ci/openSUSEBuildService.png \
 	images/ci/OC_logotype.png \
 	images/ci/OC_logo-watercolor-256.png \
 	images/ci/OC_logo_merged_171x32.png \
@@ -215,7 +220,7 @@ CHECK_LOCAL_TARGETS = @DOC_CHECK_LIST@
 if WITH_SPELLCHECK
 CHECK_LOCAL_TARGETS += spellcheck
 endif WITH_SPELLCHECK
-check-local: $(CHECK_LOCAL_TARGETS)
+check-local: $(CHECK_LOCAL_TARGETS) @dotMAKE@
 	+@cd $(builddir)/man && $(MAKE) $(AM_MAKEFLAGS) check
 
 # Make sure sources are there for out-of-tree builds:
@@ -223,7 +228,7 @@ all-local all-am-local \
 $(DOC_BUILD_CHANGELOG_TEXT) $(DOC_BUILD_CHANGELOG_ADOC) \
 @DOC_BUILD_LIST@ $(ASCIIDOC_PDF) $(ASCIIDOC_HTML_SINGLE) $(ASCIIDOC_HTML_CHUNKED): $(abs_top_builddir)/docs/.prep-src-docs
 
-all-local:
+all-local: @dotMAKE@
 	+@cd $(builddir)/man && $(MAKE) $(AM_MAKEFLAGS) all-optional
 
 # This list is defined by configure script choices and options:
@@ -368,7 +373,7 @@ ChangeLog.html-contentchecked:
 	 exit 1
 
 check-html-single: .check-html-single
-.check-html-single: $(ASCIIDOC_HTML_SINGLE) Makefile
+.check-html-single: $(ASCIIDOC_HTML_SINGLE) Makefile @dotMAKE@
 	+@FAILED=""; LANG=C; LC_ALL=C; export LANG; export LC_ALL; \
 	 for F in $(ASCIIDOC_HTML_SINGLE) ; do \
 	    test -s "$$F" && { file "$$F" | $(EGREP) -i '(XML|HTML.*document)' > /dev/null ; } || FAILED="$$FAILED $$F" ; \
@@ -405,11 +410,11 @@ check-html-chunked: .check-html-chunked
 # NOTE; we rig it up with a DOCS_NO_MAN option to simplify parallel work
 # from top-level Makefile, while allowing legacy "cd docs && make" to
 # still do the right thing by default :)
-check-man check-man-man all-man man-man all-html html-man:
+check-man check-man-man all-man man-man all-html html-man: @dotMAKE@
 	+@if [ x"$(DOCS_NO_MAN)" = xtrue ] ; then echo "  DOC-NOT-MAN	SKIP: $@ called in docs/Makefile" ; exit 0 ; fi ; \
 	  cd $(abs_top_builddir)/docs/man/ && $(MAKE) $(AM_MAKEFLAGS) -f Makefile $@
 
-man:
+man: @dotMAKE@
 	+@if [ x"$(DOCS_NO_MAN)" = xtrue ] ; then echo "  DOC-NOT-MAN	SKIP: $@ called in docs/Makefile" ; exit 0 ; fi ; \
 	  cd $(abs_top_builddir)/docs/man/ && $(MAKE) $(AM_MAKEFLAGS) -f Makefile all
 
@@ -431,7 +436,7 @@ MAINTAINER_ASCIIDOCS_CHANGELOG_DEBUG = no
 # Work around some documents that have originally included
 # the asciidoc markup (use double-hash to avoid conversion).
 # The $< is okay here, it is used in a suffix rule below
-.adoc.adoc-parsed:
+.adoc.adoc-parsed: @dotMAKE@
 	+@if [ ! -s '$<' ] ; then \
 		echo "  DOC-ASCIIDOC-GITHUB-LINKS	STRANGE: input $< does not exist or is empty" >&2 ; \
 		$(MAKE) $(AM_MAKEFLAGS) '$<' ; \
@@ -475,7 +480,7 @@ $(top_builddir)/ChangeLog.adoc-parsed: $(top_builddir)/ChangeLog.adoc
 CLEANFILES += .ChangeLog.adoc-parsed.latest
 
 dummy:
-$(top_builddir)/ChangeLog: dummy
+$(top_builddir)/ChangeLog: dummy @dotMAKE@
 	@+echo "  DOC-CHANGELOG-GENERATE-WRAPPER	$@ : call parent Makefile to decide if (re-)generation is needed" \
 	 && cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) $(@F)
 
@@ -578,7 +583,7 @@ solaris-usb.html solaris-usb.chunked solaris-usb.pdf: solaris-usb.txt asciidoc.c
 # to look at is cause to run a recipe always). We define recipes outside
 # the suffix-based handling and require *them* for default target builds.
 ChangeLog.html ChangeLog.chunked ChangeLog.pdf: ChangeLog.txt .ChangeLog.adoc-parsed.latest asciidoc.conf
-$(top_builddir)/docs/ChangeLog.html $(top_builddir)/docs/ChangeLog.chunked $(top_builddir)/docs/ChangeLog.pdf: ChangeLog.txt $(top_builddir)/ChangeLog.adoc-parsed asciidoc.conf
+$(top_builddir)/docs/ChangeLog.html $(top_builddir)/docs/ChangeLog.chunked $(top_builddir)/docs/ChangeLog.pdf: ChangeLog.txt $(top_builddir)/ChangeLog.adoc-parsed asciidoc.conf @dotMAKE@
 	@+if [ -s '$(@F)' ] && [ x"`find '$(@F)' -newer '$(top_builddir)/ChangeLog.adoc-parsed'`" != x ] ; then \
 		echo "  DOC-CHANGELOG-RENDER-WRAPPER	SKIP: `pwd`/$(@F) already exists and is newer than ChangeLog.adoc-parsed" ; \
 		if [ x"$(MAINTAINER_ASCIIDOCS_CHANGELOG_DEBUG)" != xno ] ; then \
@@ -763,9 +768,9 @@ GENERATE_HTML_SINGLE = ( \
 )
 
 *.html: common.xsl xhtml.xsl
-.txt-prepped.html:
+.txt-prepped.html: @dotMAKE@
 	+@$(GENERATE_HTML_SINGLE)
-.adoc-prepped.html:
+.adoc-prepped.html: @dotMAKE@
 	+@$(GENERATE_HTML_SINGLE)
 
 # Note: extra age check here because *.chunked is a directory and not all
@@ -808,14 +813,24 @@ qa-guide.pdf: docinfo-since-v2.8.3.xml qa-guide-docinfo.xml
 	@$(GENERATE_PDF)
 
 # Used below for spellcheck and for .prep-src-docs
-SPELLCHECK_SRC_DEFAULT = $(ALL_TXT_SRC) \
+# List most-frequently edited files first, to hit typos there sooner when
+# developing. Some files from sub-directories are spell-checked here and
+# not in their own makefiles, because they are included as chapters in
+# some larger documents anchored here.
+# Note that in builds with enabled parallel fanout mode (even if done
+# sequentially, e.g. without NUT_MAKE_SKIP_FANOUT=true explicitly),
+# files located in the current directory are processed first anyway,
+# as one (possibly parallelized) sub-make call.
+SPELLCHECK_SRC_DEFAULT = \
+	../NEWS.adoc ../UPGRADING.adoc \
 	asciidoc-vars.conf \
-	../ci_build.adoc ../README.adoc ../NEWS.adoc \
-	../INSTALL.nut.adoc ../UPGRADING.adoc \
+	../ci_build.adoc ../README.adoc \
+	../INSTALL.nut.adoc \
 	../TODO.adoc ../scripts/ufw/README.adoc \
 	../scripts/augeas/README.adoc ../lib/README.adoc \
 	../tools/nut-scanner/README.adoc \
-	../AUTHORS ../COPYING ../LICENSE-GPL2 ../LICENSE-GPL3 ../LICENSE-DCO
+	../AUTHORS ../COPYING ../LICENSE-GPL2 ../LICENSE-GPL3 ../LICENSE-DCO \
+	$(ALL_TXT_SRC)
 
 if HAVE_ASPELL
 # Non-interactively spell check all documentation source files.
@@ -962,28 +977,30 @@ SPELLCHECK_AUTO_ONE = ( \
 	|| { RES=$$? ; touch '$@'.failed; exit $$RES; } \
 )
 
-.txt.txt-spellchecked-auto:
+.txt.txt-spellchecked-auto: @dotMAKE@
 	+@$(SPELLCHECK_AUTO_ONE)
 
-.adoc.adoc-spellchecked-auto:
+.adoc.adoc-spellchecked-auto: @dotMAKE@
 	+@$(SPELLCHECK_AUTO_ONE)
 
-.in.in-spellchecked-auto:
+.in.in-spellchecked-auto: @dotMAKE@
 	+@$(SPELLCHECK_AUTO_ONE)
 
-.sample.sample-spellchecked-auto:
+.sample.sample-spellchecked-auto: @dotMAKE@
 	+@$(SPELLCHECK_AUTO_ONE)
 
-.conf.conf-spellchecked-auto:
+.conf.conf-spellchecked-auto: @dotMAKE@
 	+@$(SPELLCHECK_AUTO_ONE)
 
-spellcheck:
+spellcheck: @dotMAKE@
 	@if test "$(SPELLCHECK_ENV_DEBUG)" = detailed ; then \
 		echo "ASPELL DEBUG : information about the setup follows:"; \
 		LANG=$(ASPELL_ENV_LANG); LC_ALL=$(ASPELL_ENV_LANG); export LANG; export LC_ALL; \
 		$(ASPELL) --help || true; \
 		(command -v dpkg) && ( dpkg -l | $(GREP) -i aspell ) || true ; \
 		echo "ASPELL automatic execution line is : ( sed 's,^\(.*\)$$, \1,' < docfile.txt | $(ASPELL) -a $(ASPELL_NUT_TEXMODE_ARGS) $(ASPELL_NUT_COMMON_ARGS) | $(EGREP) -b -v '$(ASPELL_OUT_NOTERRORS)' )" ; \
+		echo "SPELLCHECK_SRCDIR: $(SPELLCHECK_SRCDIR)" ; \
+		echo "SPELLCHECK_SRC: $(SPELLCHECK_SRC)" ; \
 		echo "ASPELL proceeding to spellchecking job..."; \
 	 else true; fi
 	+@FAILED="" ; LANG=C; LC_ALL=C; export LANG; export LC_ALL; \
@@ -996,14 +1013,22 @@ spellcheck:
 			|| FAILED="$$FAILED $(SPELLCHECK_SRCDIR)/$$docsrc"; \
 		done ; \
 	 else \
+		SPELLCHECK_NOEXT_DOCS_FIRST="`for docsrc in $(SPELLCHECK_SRC); do case \"$${docsrc}\" in ../NEWS.adoc|../UPGRADING.adoc) printf '%s ' \"$${docsrc}\" ;; *) ;; esac ; done`" ; \
 		SPELLCHECK_AUTO_TGT="`for docsrc in $(SPELLCHECK_SRC); do case \"$${docsrc}\" in */*) ;; *.adoc|*.txt|*.in|*.conf|*.sample) printf '%s ' \"$${docsrc}-spellchecked-auto\" ;; esac ; done`" ; \
-		SPELLCHECK_NOEXT_DOCS="`for docsrc in $(SPELLCHECK_SRC); do case \"$${docsrc}\" in */*) printf '%s ' \"$${docsrc}\" ;; *.adoc|*.txt|*.in|*.conf|*.sample) ;; *) printf '%s ' \"$${docsrc}\" ;; esac ; done`" ; \
+		SPELLCHECK_NOEXT_DOCS="`for docsrc in $(SPELLCHECK_SRC); do case \"$${docsrc}\" in ../NEWS.adoc|../UPGRADING.adoc) ;; */*) printf '%s ' \"$${docsrc}\" ;; *.adoc|*.txt|*.in|*.conf|*.sample) ;; *) printf '%s ' \"$${docsrc}\" ;; esac ; done`" ; \
 		if test "$(SPELLCHECK_ENV_DEBUG)" != no ; then \
-			echo "ASPELL MAKEFILE DEBUG: from `pwd`: SPELLCHECK_NOEXT_DOCS='$${SPELLCHECK_NOEXT_DOCS}' SPELLCHECK_AUTO_TGT='$${SPELLCHECK_AUTO_TGT}'" ; \
+			echo "ASPELL MAKEFILE DEBUG: from `pwd`: SPELLCHECK_NOEXT_DOCS_FIRST='$${SPELLCHECK_NOEXT_DOCS_FIRST}'    SPELLCHECK_AUTO_TGT='$${SPELLCHECK_AUTO_TGT}'    SPELLCHECK_NOEXT_DOCS='$${SPELLCHECK_NOEXT_DOCS}'" ; \
 		else true ; fi ; \
+		if [ x"$${SPELLCHECK_NOEXT_DOCS_FIRST}" != x ] ; then \
+			for docsrc in $${SPELLCHECK_NOEXT_DOCS_FIRST} ; do \
+				$(MAKE) $(AM_MAKEFLAGS) -k -s -f "$(abs_top_builddir)/docs/Makefile" SPELLCHECK_SRC="" SPELLCHECK_SRC_ONE="$${docsrc}" SPELLCHECK_BUILDDIR="$(SPELLCHECK_BUILDDIR)" SPELLCHECK_SRCDIR="$(SPELLCHECK_SRCDIR)" VPATH="$(SPELLCHECK_SRCDIR):$(SPELLCHECK_BUILDDIR):$(VPATH)" "$(SPELLCHECK_BUILDDIR)/$${docsrc}-spellchecked" \
+				|| FAILED="$$FAILED $(SPELLCHECK_SRCDIR)/$$docsrc"; \
+			done ; \
+		fi ; \
 		if [ x"$${SPELLCHECK_AUTO_TGT}" != x ] ; then \
 			$(MAKE) $(AM_MAKEFLAGS) -k -s -f "$(abs_top_builddir)/docs/Makefile" SPELLCHECK_SRC="" SPELLCHECK_BUILDDIR="$(SPELLCHECK_BUILDDIR)" SPELLCHECK_SRCDIR="$(SPELLCHECK_SRCDIR)" VPATH="$(SPELLCHECK_SRCDIR):$(SPELLCHECK_BUILDDIR):$(VPATH)" $${SPELLCHECK_AUTO_TGT} ; \
-			FAILED="`for docsrc in $(SPELLCHECK_SRC); do if [ -f \"$(SPELLCHECK_BUILDDIR)/$${docsrc}-spellchecked-auto.failed\" ] ; then printf '%s ' \"$(SPELLCHECK_SRCDIR)/$${docsrc}\" ; rm -f \"$(SPELLCHECK_BUILDDIR)/$${docsrc}-spellchecked-auto.failed\" ; fi ; done`" ; \
+			FAILED_AUTO_TGT="`for docsrc in $(SPELLCHECK_SRC); do if [ -f \"$(SPELLCHECK_BUILDDIR)/$${docsrc}-spellchecked-auto.failed\" ] ; then printf '%s ' \"$(SPELLCHECK_SRCDIR)/$${docsrc}\" ; rm -f \"$(SPELLCHECK_BUILDDIR)/$${docsrc}-spellchecked-auto.failed\" ; fi ; done`" ; \
+			if test -n "$$FAILED" ; then FAILED="$$FAILED $$FAILED_AUTO_TGT" ; else FAILED="$$FAILED_AUTO_TGT" ; fi ; \
 		fi ; \
 		if [ x"$${SPELLCHECK_NOEXT_DOCS}" != x ] ; then \
 			for docsrc in $${SPELLCHECK_NOEXT_DOCS} ; do \
@@ -1066,7 +1091,7 @@ DISTCLEANFILES += $(NUT_SPELL_DICT).bak-pre-sorting $(NUT_SPELL_DICT).bak-pre-in
 # that their dictionary was updated and may need a Git recommit - either
 # if it did change, or if caller's SPELLCHECK_REPORT_MAYBE_UPDATED_DICT=yes.
 SPELLCHECK_REPORT_MAYBE_UPDATED_DICT = no
-spellcheck-interactive:
+spellcheck-interactive: @dotMAKE@
 	@rm -f $(abs_builddir)/$(NUT_SPELL_DICT).bak-pre-interactive || true
 	@cp -pf $(abs_srcdir)/$(NUT_SPELL_DICT) $(abs_builddir)/$(NUT_SPELL_DICT).bak-pre-interactive
 	+@FAILED="" ; for docsrc in $(SPELLCHECK_SRC); do \

@@ -73,6 +73,8 @@ dnl for a pre-release it may differ from even the base NUT_VERSION numbers
 dnl (e.g. a commit tagged as 2.8.3-rc5 can have its own NUT_VERSION based
 dnl on 2.8.2-something, but is assumed as a pre-release for 2.8.3 SEMVER).
 NUT_SOURCE_GITREV_SEMVER="`NUT_VERSION_QUERY=SEMVER \"${srcdir}/tools/gitlog2version.sh\" 2>/dev/null`"
+NUT_SOURCE_GITREV_SEMVER_COLONS="`echo \"${NUT_SOURCE_GITREV_SEMVER}\" | tr '.' ':'`"
+NUT_SOURCE_GITREV_SEMVER_UNDERSCORES="`echo \"${NUT_SOURCE_GITREV_SEMVER}\" | tr '.' '_'`"
 
 dnl Gitrev-based build identifier which can be used for e.g. PyPI uploads:
 dnl # Example:   NUT_SOURCE_GITREV_NUMERIC='2.8.2.695.1.696'
@@ -80,6 +82,8 @@ dnl #   NUT_SOURCE_GITREV_NUMERIC="`echo \"${NUT_SOURCE_GITREV}\" | sed -e 's/^v
 dnl # Without the commit-count since tag (dash-separated part):
 dnl # Example:   NUT_SOURCE_GITREV_NUMERIC='2.8.2.695.1'
 NUT_SOURCE_GITREV_NUMERIC="`echo \"${NUT_SOURCE_GITREV}\" | sed -e 's/^v//' -e 's/@<:@+-@:>@g.*$//' -e 's/-@<:@0-9@:>@*$//'`"
+NUT_SOURCE_GITREV_NUMERIC_COLONS="`echo \"${NUT_SOURCE_GITREV_NUMERIC}\" | tr '.' ':'`"
+NUT_SOURCE_GITREV_NUMERIC_UNDERSCORES="`echo \"${NUT_SOURCE_GITREV_NUMERIC}\" | tr '.' '_'`"
 
 dnl Note: except for experiments, do not pass this into config.h - use
 dnl the NUT_VERSION_MACRO from nut_version.h instead. Developers may
@@ -192,7 +196,7 @@ AC_SUBST([NUT_CONFIG_LDFLAGS])
 NUT_STASH_WARNINGS
 AC_CONFIG_HEADERS([include/config.h])
 AC_PREFIX_DEFAULT(/usr/local/ups)
-AM_INIT_AUTOMAKE([subdir-objects])
+AM_INIT_AUTOMAKE([subdir-objects tar-pax])
 
 AS_CASE([${target_os}],
 	[*mingw*], [AS_CASE([${CFLAGS-}${CXXFLAGS-}],
@@ -313,7 +317,7 @@ NUT_ARG_WITH_EXPAND_DEFAULT_HELP_SINGLEQUOTE([confdir-examples], [DIRPATH], [Com
 
 dnl ---------------------------------------------------------------------
 dnl GNU and BSD make are okay with the syntax, but Sun make/dmake are not:
-AC_MSG_CHECKING([whether this make implementation supports export VAR=VAL syntax])
+AC_MSG_CHECKING([whether this make implementation supports 'export VAR=VAL' syntax])
 dnl # using printf formatting for some funniner shells out there
 nut_am_output="`printf 'export VAR=VAL\ntest:\n\t@echo \"VAR=%s%sVAR%s\"\n' '\$' '(' ')' | ${MAKE-make} -f - test`"
 nut_am_result="$?"
@@ -326,6 +330,24 @@ AS_IF([test x"${nut_am_result}" = x0 -a x"${nut_am_output}" = x"VAR=VAL"], [
 ])
 AC_SUBST(NUT_AM_MAKE_CAN_EXPORT)
 
+dnl ---------------------------------------------------------------------
+dnl Some versions of BSD make (e.g. in NetBSD 11) may require this syntax
+dnl in lieu of the more standard "+" prefix, but at least GNU make exploded
+dnl with it, so we can not use it everywhere:
+AC_MSG_CHECKING([whether this make implementation supports a .MAKE special source (pseudo-goal for sub-makes)])
+dnl # using printf formatting for some funniner shells out there
+nut_am_output="`printf 'sub: .MAKE\n\t@printf \\\"test:\\\\n\\\\t@echo %s\\\\n\\\" | $(MAKE) -f - test\n' '\\\\\\\"Hello world\\\\\\\"' | ${MAKE-make} -f - sub`"
+nut_am_result="$?"
+AS_IF([test x"${nut_am_result}" = x0 -a x"${nut_am_output}" = x"Hello world"], [
+	dotMAKE=".MAKE"
+	AC_MSG_RESULT(yes)
+], [
+	dotMAKE=""
+	AC_MSG_RESULT(no: got '${nut_am_output}')
+])
+AC_SUBST(dotMAKE)
+
+dnl ---------------------------------------------------------------------
 dnl Some systems have older autotools without direct macro support for PKG_CONF*
 NUT_CHECK_PKGCONFIG
 
@@ -389,8 +411,8 @@ test "${prefix}" = "NONE" && prefix="${ac_default_prefix}"
 test "${exec_prefix}" = "NONE" && exec_prefix='${prefix}'
 
 AS_CASE([x"${nut_with_confdir}"],
-	[yes], [AC_MSG_ERROR([--with-confdir should specify a path name or expansible expression])],
-	[/*|?:\*|?:/*|*/*|*'\'*], [
+	[xyes], [AC_MSG_ERROR([--with-confdir should specify a path name or expansible expression])],
+	[x/*|x?":\\"*|x?:/*|x*/*|x*'\'*], [
 		AC_MSG_NOTICE([A non-trivial --with-confdir path was specified (${nut_with_confdir}); any --with-confdir-suffix (${nut_with_confdir_suffix}) or --sysconfdir (${sysconfdir}) values are disregarded])
 	], [
 		RESULT_COMMENT=""
@@ -1296,9 +1318,13 @@ AC_CHECK_HEADER([poll.h],
         [Define to 1 if you have <poll.h>.])])
 
 SEMLIBS=""
+nut_have_semaphore_h=no
+nut_have_semaphore_unnamed=no
+nut_have_semaphore_named=no
 AC_CHECK_HEADER([semaphore.h],
     [AC_DEFINE([HAVE_SEMAPHORE_H], [1],
         [Define to 1 if you have <sys/semaphore.h>.])
+     nut_have_semaphore_h=yes
 
      AC_LANG_PUSH([C])
      myLIBS="${LIBS}"
@@ -1309,11 +1335,11 @@ AC_CHECK_HEADER([semaphore.h],
      dnl   sem_init   nut_scanner-nut-scanner.o
      dnl   (symbol belongs to implicit dependency /usr/lib/librt.so.1)
      AC_SEARCH_LIBS([sem_init], [pthread], [], [
-	unset ac_cv_search_sem_init
-	AC_SEARCH_LIBS([sem_init], [pthread], [SEMLIBS_LRT=" -lrt"], [], [-lrt])])
+        unset ac_cv_search_sem_init
+        AC_SEARCH_LIBS([sem_init], [pthread], [SEMLIBS_LRT=" -lrt"], [], [-lrt])])
      AC_SEARCH_LIBS([sem_open], [pthread], [], [
-	unset ac_cv_search_sem_open
-	AC_SEARCH_LIBS([sem_open], [pthread], [SEMLIBS_LRT=" -lrt"], [], [-lrt])])
+        unset ac_cv_search_sem_open
+        AC_SEARCH_LIBS([sem_open], [pthread], [SEMLIBS_LRT=" -lrt"], [], [-lrt])])
 
      AS_CASE([${ac_cv_search_sem_init}], [no*], [], [SEMLIBS="${ac_cv_search_sem_init}"])
      AS_CASE([${ac_cv_search_sem_open}], [no*], [], ["${SEMLIBS}"], [], [SEMLIBS="${ac_cv_search_sem_open}"])
@@ -1335,6 +1361,7 @@ sem_destroy(&semaphore);
         [AC_DEFINE([HAVE_SEMAPHORE_UNNAMED], [1],
             [Define to 1 if you have <sys/semaphore.h> with usable sem_t, sem_init() and sem_destroy() for unnamed semaphores.])
          AC_MSG_RESULT([ok])
+         nut_have_semaphore_unnamed=yes
         ],
         [AC_MSG_RESULT([no])]
      )
@@ -1359,6 +1386,7 @@ if (semaphore != SEM_FAILED)
         [AC_DEFINE([HAVE_SEMAPHORE_NAMED], [1],
             [Define to 1 if you have <sys/semaphore.h> with usable sem_t, sem_open() and sem_close() for named semaphores.])
          AC_MSG_RESULT([ok])
+         nut_have_semaphore_named=yes
         ],
         [AC_MSG_RESULT([no])]
      )
@@ -1367,8 +1395,28 @@ if (semaphore != SEM_FAILED)
      AC_LANG_POP([C])
     ]
 )
-AM_CONDITIONAL(HAVE_SEMAPHORE_LIBS, test -n "${SEMLIBS}")
+AM_CONDITIONAL(HAVE_SEMAPHORE_LIBS, [test -n "${SEMLIBS}"])
+AS_IF([test -n "${SEMLIBS}" -o x"${nut_have_semaphore_h}" = xyes -o x"${nut_have_semaphore_unnamed}" = xyes -o x"${nut_have_semaphore_named}" = xyes],
+    [nut_have_semaphore_ability=yes],
+    [nut_have_semaphore_ability=no])
 
+dnl ----------------------------------------------------------------------
+dnl Check for --with-threading request
+
+NUT_ARG_WITH([threading],
+    [If it is possible to parallelize some tools (e.g. nut-scanner), do so?],
+    [auto])
+
+AS_CASE(["${nut_with_threading}"],
+    [""|yes], [AS_IF([test x"${nut_have_semaphore_ability}" = xyes], [], [AC_MSG_ERROR([pthread support was required but libraries not detected])])],
+    [auto],[AS_IF([test x"${nut_have_semaphore_ability}" = xyes], [nut_with_threading=yes], [nut_with_threading=no])],
+    [no], [],
+        [AC_MSG_ERROR([Unsupported value for --with-threading option: "${nut_with_threading}"])]
+)
+NUT_REPORT_FEATURE([Enable support for parallelization of some tools], [${nut_with_threading}], [${SEMLIBS}],
+					[WITH_THREADING], [Define to enable build with threading support])
+
+dnl ----------------------------------------------------------------------
 AC_CHECK_FUNCS(cfsetispeed tcsendbreak)
 AC_CHECK_FUNCS(seteuid setsid getpassphrase)
 AC_CHECK_FUNCS(on_exit setlogmask)
@@ -1612,6 +1660,24 @@ if (res != 0) return res
 AS_IF([test x"${ac_cv_func_strdup}" = xyes],
     [AC_DEFINE([HAVE_STRDUP], 1, [defined if standard library has, and C standard allows, the strdup(s) method])],
     [AC_MSG_WARN([Required C library routine strdup not found; try adding -D_POSIX_C_SOURCE=200112L])]
+    )
+
+AC_CACHE_CHECK([for %zu as PRIuSIZE],
+    [ac_cv_printfmt_zu],
+    [AX_RUN_OR_LINK_IFELSE(
+        [AC_LANG_PROGRAM([$CODE_STRINGINCL
+#include <stdlib.h>
+],
+            [[size_t n = 123;
+char buf[64];
+snprintf(buf, sizeof(buf), "%zu", n);
+return !strcmp(buf, "123");
+]])],
+        [ac_cv_printfmt_zu=yes], [ac_cv_printfmt_zu=no]
+    )])
+AS_IF([test x"${ac_cv_printfmt_zu}" = xyes],
+    [AC_DEFINE([HAVE_PRINTF_ZU], 1, [defined if standard library has, and C standard allows, the printf("%zu", size_t) support])],
+    [AC_MSG_WARN([Desired C library support for printf("%zu", size_t) not found; try adding -D_POSIX_C_SOURCE=200112L])]
     )
 
 AC_CACHE_CHECK([for va_copy(dest,src)],
@@ -2312,6 +2378,7 @@ AC_ARG_WITH(drivers,
 		if test -z "${with_powerman}"; then with_powerman="yes"; fi
 		if test -z "${with_modbus}"; then with_modbus="yes"; fi
 		if test -z "${with_ipmi}"; then with_ipmi="yes"; fi
+		if test -z "${with_upower}"; then with_upower="yes"; fi
 
 		dnl Platform-dependent snowflakes that are required or auto:
 		if test -z "${with_gpio}"; then
@@ -2349,6 +2416,7 @@ AC_ARG_WITH(drivers,
 		if test -z "${with_powerman}"; then with_powerman="${withval}"; fi
 		if test -z "${with_modbus}"; then with_modbus="${withval}"; fi
 		if test -z "${with_ipmi}"; then with_ipmi="${withval}"; fi
+		if test -z "${with_upower}"; then with_upower="${withval}"; fi
 		if test -z "${with_gpio}"; then with_gpio="${withval}"; fi
 		if test -z "${with_linux_i2c}"; then with_linux_i2c="${withval}"; fi
 		if test -z "${with_macosx_ups}"; then with_macosx_ups="${withval}"; fi
@@ -2365,7 +2433,8 @@ AC_ARG_WITH(drivers,
 				SERIAL_DRIVERLIST USB_LIBUSB_DRIVERLIST SERIAL_USB_DRIVERLIST
 				SNMP_DRIVERLIST NEONXML_DRIVERLIST
 				MACOSX_DRIVERLIST MODBUS_DRIVERLIST LINUX_I2C_DRIVERLIST
-				POWERMAN_DRIVERLIST IPMI_DRIVERLIST GPIO_DRIVERLIST"
+				POWERMAN_DRIVERLIST IPMI_DRIVERLIST GPIO_DRIVERLIST
+				UPOWER_DRIVERLIST"
 
 			dnl Gets ONE Makefile assignment value
 			get_drivers_makefile_value() (
@@ -2516,6 +2585,11 @@ AC_ARG_WITH(drivers,
 										[AC_MSG_NOTICE([Requiring --with-gpio=yes for driver "$DRV"])
 										with_gpio=yes]
 									)],
+								[UPOWER_DRIVERLIST], [
+									AS_IF([test -z "${with_upower}"],
+										[AC_MSG_NOTICE([Requiring --with-upower=yes for driver "$DRV"])
+										with_upower=yes]
+									)],
 
 								[AC_MSG_WARN([Unhandled DRVLIST_NAME=$DRVLIST_NAME])]
 							)
@@ -2549,7 +2623,7 @@ dnl check for --with-all (or --without-all, or --with-all=auto) flag
 
 AC_MSG_CHECKING(for --with-all)
 AC_ARG_WITH(all,
-	AS_HELP_STRING([--with-all], [enable serial, usb, snmp, neon, ipmi, powerman, modbus, gpio (currently on Linux released after ~2018), linux_i2c (on Linux), macosx-ups (on MacOS), cgi, dev, avahi, nut-scanner, nutconf, dev-libnutconf, pynut]),
+	AS_HELP_STRING([--with-all], [enable serial, usb, snmp, neon, ipmi, powerman, modbus, gpio (currently on Linux released after ~2018), linux_i2c (on Linux), upower, macosx-ups (on MacOS), cgi, dev, avahi, nut-scanner, nutconf, dev-libnutconf, pynut]),
 [
 	if test -n "${withval}"; then
 		dnl Note: we allow "no" as a positive value, because
@@ -2563,6 +2637,7 @@ AC_ARG_WITH(all,
 		if test -z "${with_powerman}"; then with_powerman="${withval}"; fi
 		if test -z "${with_modbus}"; then with_modbus="${withval}"; fi
 		if test -z "${with_ipmi}"; then with_ipmi="${withval}"; fi
+		if test -z "${with_upower}"; then with_upower="${withval}"; fi
 
 		dnl Platform-dependent snowflakes that are required or auto:
 		if test -z "${with_gpio}"; then
@@ -2707,8 +2782,14 @@ DEFAULT_MAN_DIR_AS_BASE='m4nut_DEFAULT_MAN_DIR_AS_BASE'
 
 case "${target_os}" in
     solaris*|sunos*|SunOS*|illumos*)
-        dnl Note: this regards target OS standard layout
+        dnl Note: this regards target OS standard layout as documented in
+        dnl https://docs.oracle.com/cd/E23824_01/html/821-1451/gladp.html
         dnl but may not fit certain packaging projects
+        dnl FIXME https://github.com/networkupstools/nut/issue/3314 :
+        dnl  If we have no tools or wish to build man pages, and would
+        dnl  just deliver what we have in dist tarball (or otherwise), we
+        dnl  must keep the original names and cross-links of files we copy
+        dnl  (no section substitutions then!)
         DEFAULT_MAN_SECTION_CMD_SYS="1m"
         DEFAULT_MAN_DIR_AS_BASE="no"
         ;;
@@ -2759,22 +2840,23 @@ nut_ssl_lib=""
 NUT_ARG_WITH([ssl], [enable SSL support (either NSS or OpenSSL)], [auto])
 NUT_ARG_WITH([nss], [enable SSL support using Mozilla NSS], [auto])
 NUT_ARG_WITH([openssl], [enable SSL support using OpenSSL], [auto])
+NUT_ARG_WITH([ssl-client-validation], [enable SSL client certificate validation ability (currently requires NSS, beware issue #3329)], [auto])
 
 dnl ${nut_with_ssl}: any value except "yes" or "no" is treated as "auto".
 if test "${nut_with_ssl}" != "no"; then
    dnl check if either NSS or OpenSSL was explicitly requested
-   if test "${nut_with_nss}" = "yes"; then
+   if test "${nut_with_nss}" = "yes" || test "${nut_with_ssl}" = "nss" ; then
       NUT_CHECK_LIBNSS
       if test "${nut_have_libnss}" != "yes"; then
          AC_MSG_ERROR([Mozilla NSS not found (required for SSL support)])
       fi
-   elif test "${nut_with_openssl}" = "yes"; then
+   elif test "${nut_with_openssl}" = "yes" || test "${nut_with_ssl}" = "openssl" ; then
       NUT_CHECK_LIBOPENSSL
       if test "${nut_have_openssl}" != "yes"; then
          AC_MSG_ERROR([OpenSSL not found (required for SSL support)])
       fi
    else
-      dnl Prefer OpenSSL over NSS otherwise
+      dnl e.g. "auto" or "yes": want *some* SSL, prefer OpenSSL over NSS otherwise
       NUT_CHECK_LIBOPENSSL
       if test "${nut_have_openssl}" != "yes"; then
          NUT_CHECK_LIBNSS
@@ -2801,10 +2883,22 @@ AM_CONDITIONAL(WITH_OPENSSL, test "${nut_with_openssl}" = "yes")
 NUT_REPORT_FEATURE([enable SSL support], [${nut_with_ssl}], [${nut_ssl_lib}],
 					[WITH_SSL], [Define to enable SSL])
 
+AS_CASE([${nut_with_ssl_client_validation}],
+    [no], [],
+    [yes|""], [nut_with_ssl_client_validation="yes"],
+        dnl TOTHINK: reject if openssl/none build?
+    [auto|*], [nut_with_ssl_client_validation="no"]
+        dnl Until #3329 is solved, auto==no
+)
+NUT_REPORT_FEATURE([enable SSL client certificate validation],
+	[${nut_with_ssl_client_validation}], [],
+	[WITH_CLIENT_CERTIFICATE_VALIDATION],
+	[Define to enable SSL client certificate validation])
+
 dnl ----------------------------------------------------------------------
 dnl Check for presence and compiler flags of various libraries
 
-NUT_ARG_WITH([serial], [build and install serial drivers], [yes])
+NUT_ARG_WITH([serial], [build and install serial-only drivers], [yes])
 
 dnl These checks are performed unconditionally, even if the corresponding
 dnl --with-* options are not given. This is because we cannot predict
@@ -2841,6 +2935,8 @@ dnl Platform-dependent drivers, currently their detection code is directly
 dnl spelled out in configure.ac
 NUT_ARG_WITH([macosx_ups], [build and install Mac OS X Power Sources meta-driver], [auto])
 NUT_ARG_WITH([linux_i2c], [build and install i2c drivers], [auto])
+NUT_ARG_WITH([upower], [build and install UPower driver and nut-scanner support (requires GLib/GIO)], [auto])
+NUT_CHECK_LIBGLIB
 
 dnl A Python GUI client application for the sysadmin desktop
 dnl (not necessarily on the NUT server itself):
@@ -2990,7 +3086,6 @@ NUT_REPORT_FEATURE([enable Avahi support], [${nut_with_avahi}], [],
 					[WITH_AVAHI], [Define to enable Avahi support])
 
 dnl ----------------------------------------------------------------------
-
 dnl checks related to --with-powerman
 
 dnl ${nut_with_powerman}: any value except "yes" or "no" is treated as "auto".
@@ -3108,8 +3203,14 @@ if test "${nut_with_gpio}" != "no"; then
 fi
 
 dnl NOTE: m4 scriptlet also defines WITH_LIBGPIO_VERSION like 0x00020000 in config.h
-NUT_REPORT_DRIVER([build GPIO driver (library v${GPIO_VERSION})], [${nut_with_gpio}], [${nut_gpio_lib}],
+AS_IF([test x"${GPIO_VERSION}" = xnone], [
+	REPORT_GPIO_VERSION="library version not detected"
+],[
+	REPORT_GPIO_VERSION="library v${GPIO_VERSION}"
+])
+NUT_REPORT_DRIVER([build GPIO driver (${REPORT_GPIO_VERSION})], [${nut_with_gpio}], [${nut_gpio_lib}],
 					[WITH_GPIO], [Define to enable GPIO support])
+unset REPORT_GPIO_VERSION
 
 dnl ----------------------------------------------------------------------
 dnl The Mac OS X meta-driver looks at IOKit Power Sources keys managed by
@@ -3131,6 +3232,31 @@ fi
 NUT_REPORT_DRIVER([build Mac OS X meta-driver],
 			[${nut_with_macosx_ups}], [${nut_macosx_ups_lib}],
 			[WITH_MACOSX], [Define to enable Mac OS X meta-driver])
+
+dnl ----------------------------------------------------------------------
+dnl checks related to --with-upower
+dnl Check if we have detected libGLib / libGIO above (Required for the
+dnl nut-upower driver and/or nut-scanner UPower support)
+dnl NOTE: Do not confuse libglib{2} (GNOME) with glibc (part of compiler)
+dnl ----------------------------------------------------------------------
+
+AC_MSG_CHECKING([whether to build nut-upower driver and nut-scanner support])
+AS_IF([test "${nut_have_libglib}${nut_have_libgio}" = "yesyes"], [
+	AS_CASE(["${nut_with_upower}"],
+		[yes|auto], [nut_with_upower=yes]
+	)
+], [
+	AS_CASE(["${nut_with_upower}"],
+		[yes], [AC_MSG_ERROR([GLib/GIO not found but requested via --with-upower])],
+		[auto],[AC_MSG_WARN([GLib/GIO not found. The 'nut-upower' driver will not be built.])]
+	)
+	nut_with_upower=no
+])
+
+AC_MSG_RESULT(${nut_with_upower})
+NUT_REPORT_DRIVER([build UPower driver and nut-scanner support],
+			[${nut_with_upower}], [],
+			[WITH_UPOWER], [Define to build UPower driver and nut-scanner support])
 
 dnl ----------------------------------------------------------------------
 dnl checks related to --with_linux_i2c
@@ -3302,6 +3428,21 @@ fi
 NUT_REPORT_PROGRAM([build CGI programs], [${nut_with_cgi}], [],
 					[WITH_CGI], [Define to enable CGI (HTTP) support])
 
+# Built into HTML via templates:
+NUT_ARG_WITH([cgi-uri], [default URI (under web-server root) where NUT CGI programs are exposed, typically /cgi-bin or /cgi-bin/nut], [auto])
+AS_CASE([${target_os}],
+	[*mingw*], [NUT_CGI_URI="/cgi-bin"],	dnl ### Let N4W build be easier to use out of the box (EXE tarball)
+		[NUT_CGI_URI="/cgi-bin/nut"]
+)
+AS_CASE([${nut_with_cgi_uri}],
+	[/*], [NUT_CGI_URI="${nut_with_cgi_uri}"],
+	[auto], [AC_MSG_NOTICE([--with-cgi-uri defaulted to '${NUT_CGI_URI}' for this platform])],
+		[AC_MSG_WARN([--with-cgi-uri must be a web server path starting with a slash; value '${nut_with_cgi_uri}' is invalid, defaulting to '${NUT_CGI_URI}'])]
+)
+AC_SUBST(NUT_CGI_URI)
+AS_IF([test x"${nut_with_cgi}" = xyes], [
+	NUT_REPORT([Default URI to NUT CGI programs], [${NUT_CGI_URI}])
+])
 
 dnl ----------------------------------------------------------------------
 dnl checks related to --with-pynut and --with-nut_monitor
@@ -3350,7 +3491,7 @@ if test x"${nut_with_nut_monitor}" != xno ; then
     PYTHON2_TEST_MODULES="re,glob,codecs,gtk,gtk.glade,gobject,ConfigParser"
     PYTHON3_TEST_MODULES_QT5="re,glob,codecs,PyQt5.uic,configparser"
     PYTHON3_TEST_MODULES_QT6="re,glob,codecs,PyQt6.uic,configparser"
-    if test -n "${PYTHON2_VERSION_INFO_REPORT}" ; then
+    if test -n "${PYTHON2_VERSION_INFO_REPORT}" -a -n "${PYTHON2}" ; then
         AC_MSG_CHECKING([if we have Python2 prerequisites for NUT-Monitor desktop application])
         if ${PYTHON2} -c "import ${PYTHON2_TEST_MODULES}" 1>&5 2>&5 \
         ; then
@@ -3404,7 +3545,7 @@ if test x"${nut_with_nut_monitor}" != xno ; then
         fi
     fi
 
-    if test -n "${PYTHON3_VERSION_INFO_REPORT}" ; then
+    if test -n "${PYTHON3_VERSION_INFO_REPORT}" -a -n "${PYTHON3}" ; then
         AC_MSG_CHECKING([if we have Python3 Qt5 prerequisites for NUT-Monitor desktop application])
         if ${PYTHON3} -c "import ${PYTHON3_TEST_MODULES_QT5}" 1>&5 2>&5 \
         ; then
@@ -3420,7 +3561,7 @@ if test x"${nut_with_nut_monitor}" != xno ; then
         fi
     fi
 
-    if test -n "${PYTHON3_VERSION_INFO_REPORT}" ; then
+    if test -n "${PYTHON3_VERSION_INFO_REPORT}" -a -n "${PYTHON3}" ; then
         AC_MSG_CHECKING([if we have Python3 Qt6 prerequisites for NUT-Monitor desktop application])
         if ${PYTHON3} -c "import ${PYTHON3_TEST_MODULES_QT6}" 1>&5 2>&5 \
         ; then
@@ -3438,7 +3579,7 @@ if test x"${nut_with_nut_monitor}" != xno ; then
 
     dnl Fall back to default interpreter
     if test -z "${nut_with_nut_monitor_py2gtk2}${nut_with_nut_monitor_py3qt5}${nut_with_nut_monitor_py3qt6}" \
-    && test -n "${PYTHON_VERSION_INFO_REPORT}" \
+    && test -n "${PYTHON_VERSION_INFO_REPORT}" -a -n "${PYTHON}" \
     && test x"${PYTHON_VERSION_INFO_REPORT}" != x"${PYTHON3_VERSION_INFO_REPORT}" \
     && test x"${PYTHON_VERSION_INFO_REPORT}" != x"${PYTHON2_VERSION_INFO_REPORT}" \
     ; then
@@ -4001,6 +4142,11 @@ dnl not fail if we have no tools to generate it (so add to SKIP list).
 			( cd "$DOCTESTDIR" && ${A2X} --format manpage --destination-dir=. --xsltproc-opts="--nonet" "${abs_srcdir}"/docs/man/snmp-ups.txt && test -s snmp-ups.8 ) && can_build_doc_man=yes
 			rm -f "${DOCTESTDIR}"/snmp-ups.8
 		fi
+		if test x"${can_build_doc_man}" != xyes && test x"${have_disted_doc_man}" = xyes && test x"${nut_doc_build_target_flag}" != xno ; then
+			dnl https://github.com/networkupstools/nut/issue/3314
+			AC_MSG_NOTICE([Seems we can not build man pages, but have some pre-built ones...])
+			dnl want_disted_doc_man=yes
+		fi
 		can_install_doc_man=no
 		if test "${want_disted_doc_man}" = yes && ( test "${have_disted_doc_man}" = yes || test "${have_disted_doc_man}" = yes-placeholder ) ; then
 			AC_MSG_NOTICE([Requested, and can, install pre-built distributed copies of ${nut_doc_build_target_base} documentation])
@@ -4033,6 +4179,9 @@ dnl not fail if we have no tools to generate it (so add to SKIP list).
 						if test "${have_disted_doc_man}" = yes || test "${have_disted_doc_man}" = yes-placeholder ; then
 							AC_MSG_WARN([Unable to build ${nut_doc_build_target_base} documentation, but can install pre-built distributed copies])
 							DOC_INSTALL_DISTED_MANS="yes"
+							dnl Avoid rebuilding existing build products due to their timestamp dependencies;
+							dnl ignore "touch" errors due to e.g. read-only sources (distcheck, ISO image, etc.):
+							touch -r "${abs_srcdir}"/docs/man/Makefile.am "${abs_srcdir}"/docs/man/*.{1,2,3,4,5,6,7,8,9}* "${abs_srcdir}"/docs/man/*.{txt,xml,html,pdf} || true
 							can_install_doc_man=yes
 						else
 							AC_MSG_WARN([Unable to build ${nut_doc_build_target_base} documentation, and unable to install pre-built distributed copies because they are absent; will reflect on this below])
@@ -4521,6 +4670,30 @@ AM_CONDITIONAL(WITH_DEV, test "${nut_with_dev}" = "yes")
 NUT_REPORT_FEATURE([build and install the development files], [${nut_with_dev}], [],
 					[WITH_DEV], [Define to enable development files support])
 
+dnl Since 2.7.x releases, NUT binaries have grown rather large on many
+dnl platforms. Maybe this is due to more and more libcommon* methods?
+dnl Tracked at https://github.com/networkupstools/nut/issues/2800
+dnl While we had never shared internal code this way (and probably need
+dnl to stress it is not a public API/ABI), most NUT binaries are already
+dnl dynamically linked wither with libupsclient or third-party code.
+AC_MSG_CHECKING(if requested shared internal libraries)
+NUT_ARG_ENABLE([shared-private-libs], [ENABLE_SHARED_PRIVATE_LIBS], [Dynamically link to NUT libcommon* libraries delivered once, instead of building used code into each program binary], [no])
+
+dnl For now basically cover yes/no/auto
+dnl FIXME: Somehow determine whether we can do this at all,
+dnl for proper failure on "yes" if we can't vs. not-failing
+dnl but rather switching to "no" for "auto"?
+AS_CASE([${nut_enable_shared_private_libs}],
+	[""|yes], [nut_enable_shared_private_libs="yes"],
+	[auto], [nut_enable_shared_private_libs="yes"],
+	[no], [],
+		[AC_MSG_ERROR([invalid option value --enable-shared-private-libs='${nut_enable_shared_private_libs}'])]
+)
+AC_MSG_RESULT([${nut_enable_shared_private_libs}])
+AM_CONDITIONAL(ENABLE_SHARED_PRIVATE_LIBS, test "${nut_enable_shared_private_libs}" = "yes"])
+NUT_REPORT_FEATURE([dynamically link to NUT common libraries instead of copying needed bits into each binary], [${nut_enable_shared_private_libs}], [],
+					[ENABLE_SHARED_PRIVATE_LIBS], [Define to dynamically link to NUT common libraries instead of copying needed bits into each binary])
+
 dnl ----------------------------------------------------------------------
 dnl checks related to MS Windows support (MingW)
 
@@ -4700,11 +4873,11 @@ AC_MSG_CHECKING(network port number)
 NUT_ARG_WITH([port], [PORTNUM], [port for network communications], [3493])
 
 AS_IF([(test 0 -lt "${nut_with_port}" && test 65536 -gt "${nut_with_port}") 2>/dev/null],
-	[PORT="${nut_with_port}"],
+	[NUT_PORT="${nut_with_port}"],
 	[AC_MSG_ERROR(invalid option --with(out)-port - see docs/configure.txt)]
 )
-AC_MSG_RESULT(${PORT})
-AC_DEFINE_UNQUOTED(PORT, ${PORT}, [Port for network communications])
+AC_MSG_RESULT(${NUT_PORT})
+AC_DEFINE_UNQUOTED(NUT_PORT, ${NUT_PORT}, [Port for NUT network communications])
 
 dnl ---------------------------------------------------------------------
 AC_MSG_CHECKING(facility for syslog)
@@ -5099,6 +5272,46 @@ dnl What pathname would we embed into unit files ExecStartPre?
 dnl TODO? Any need to make it a --with-... argument?
 AC_PATH_PROG([SYSTEMD_TMPFILES_PROGRAM], [systemd-tmpfiles], [/usr/bin/systemd-tmpfiles])
 
+dnl Note: same as (systemd-)tmpfiles
+AC_MSG_CHECKING([whether to install sysusers.d files])
+NUT_ARG_WITH([systemdsysusersdir], [(DIRPATH|yes|no|auto)], [Directory for systemd sysusers.d scripts], [auto])
+systemdsysusersdir="${nut_with_systemdsysusersdir}"
+
+case "${systemdsysusersdir}" in
+	yes|auto|"")
+		AS_IF([test x"$have_PKG_CONFIG" = xyes],
+			[def_systemdsysusersdir="`$PKG_CONFIG --variable=sysusersdir systemd 2>/dev/null`" && test -n "$def_systemdsysusersdir" || \
+			 def_systemdsysusersdir="`$PKG_CONFIG --variable=sysusersdir libsystemd 2>/dev/null`" || def_systemdsysusersdir=""],
+			[def_systemdsysusersdir=""])
+
+		AS_IF([test x"${def_systemdsysusersdir}" = x], [
+			AS_IF([test "${systemdsysusersdir}" = yes],
+				[AC_MSG_ERROR([--with-systemdsysusersdir=${systemdsysusersdir} was requested, but PKG_CONFIG could not be queried for the system settings])])
+			systemdsysusersdir=""
+			], [systemdsysusersdir="${def_systemdsysusersdir}"])
+
+		unset def_systemdsysusersdir
+		;;
+	no)
+		systemdsysusersdir=""
+		;;
+	*)
+		AS_IF([test -d "${systemdsysusersdir}"], [],
+			[AC_MSG_WARN([--with-systemdsysusersdir='${systemdsysusersdir}' was requested, but that location does not currently exist in build environment - just so you know...])])
+		;;
+esac
+if test "${systemdsysusersdir}" = "auto" ; then systemdsysusersdir=""; fi
+if test -n "${systemdsysusersdir}"; then
+	AC_MSG_RESULT(using ${systemdsysusersdir})
+	NUT_REPORT_PATH_INTEGRATIONS([Systemd-sysusers configs], [${systemdsysusersdir}])
+else
+	AC_MSG_RESULT(no)
+fi
+AM_CONDITIONAL([WITH_SYSTEMD_SYSUSERS], [test x"${systemdsysusersdir}" != "x"])
+dnl What pathname would we embed into unit files ExecStartPre?
+dnl TODO? Any need to make it a --with-... argument?
+AC_PATH_PROG([SYSTEMD_SYSUSERS_PROGRAM], [systemd-sysusers], [/usr/bin/systemd-sysusers])
+
 
 dnl Note: we may want binaries with sd_notify and similar features regardless
 dnl of building and delivering unit files (which may be crafted separately).
@@ -5120,6 +5333,36 @@ AS_CASE(["${nut_with_libsystemd}"],
 AC_MSG_RESULT(${with_libsystemd})
 
 AC_PATH_PROG([SYSTEMD_ANALYZE_PROGRAM], [systemd-analyze], [/usr/bin/systemd-analyze])
+
+dnl Relevant since 2018 (v243): https://github.com/systemd/systemd/pull/12933
+SYSTEMD_SUPPORTS_EXEC_CONDITION=no
+AS_IF([test -x "$SYSTEMD_ANALYZE_PROGRAM"], [
+	AC_MSG_CHECKING([if your systemd version supports ExecCondition])
+	myFILE="`${MKTEMP} systemd-analyze-XXXXXX.service`"
+	cat > "$myFILE" << EOF
+@<:@Unit@:>@
+Description=temp
+@<:@Service@:>@
+ExecCondition=/bin/true
+ExecStart=/bin/true
+Type=simple
+EOF
+	if myOUT="`\"$SYSTEMD_ANALYZE_PROGRAM\" verify \"$myFILE\" 2>&1`" ; then
+		if (echo "$myOUT" | ${GREP} "Failed to parse service type, ignoring") ; then
+			true
+		else
+			SYSTEMD_SUPPORTS_EXEC_CONDITION=yes
+		fi
+	fi
+	rm -f "$myFILE"
+	AC_MSG_RESULT([${SYSTEMD_SUPPORTS_EXEC_CONDITION}])
+	])
+AS_IF([test x"${SYSTEMD_SUPPORTS_EXEC_CONDITION}" = xyes], [
+	dnl No comment
+	SYSTEMD_AVAILABLE_EXEC_CONDITION=""
+], [
+	SYSTEMD_AVAILABLE_EXEC_CONDITION="### Since systemd v243 ### "
+])
 
 dnl Relevant since 2023: https://github.com/systemd/systemd/pull/25916
 SYSTEMD_SUPPORTS_DAEMON_TYPE_NOTIFY=no
@@ -6064,7 +6307,11 @@ AC_SUBST(NUT_SOURCE_GITREV)
 AC_SUBST(NUT_SOURCE_GITREV_IS_RELEASE)
 AC_SUBST(NUT_SOURCE_GITREV_IS_PRERELEASE)
 AC_SUBST(NUT_SOURCE_GITREV_SEMVER)
+AC_SUBST(NUT_SOURCE_GITREV_SEMVER_COLONS)
+AC_SUBST(NUT_SOURCE_GITREV_SEMVER_UNDERSCORES)
 AC_SUBST(NUT_SOURCE_GITREV_NUMERIC)
+AC_SUBST(NUT_SOURCE_GITREV_NUMERIC_COLONS)
+AC_SUBST(NUT_SOURCE_GITREV_NUMERIC_UNDERSCORES)
 AC_SUBST(NUT_WEBSITE_BASE)
 AC_SUBST(LIBSSL_CFLAGS)
 AC_SUBST(LIBSSL_LIBS)
@@ -6115,6 +6362,7 @@ AC_SUBST(SYSTEMD_DAEMON_WATCHDOG_UPSLOG)
 AC_SUBST(SYSTEMD_DAEMON_WATCHDOG_UPSMON)
 AC_SUBST(SYSTEMD_DAEMON_WATCHDOG_DRIVER)
 AC_SUBST(SYSTEMD_DAEMON_TIMEOUT_STOP_UPSMON)
+AC_SUBST(SYSTEMD_AVAILABLE_EXEC_CONDITION)
 AC_SUBST(SYSTEMD_TMPFILES_PROGRAM)
 AC_SUBST(DRIVER_BUILD_LIST)
 AC_SUBST(DRIVER_MAN_LIST)
@@ -6142,7 +6390,7 @@ AC_SUBST(LDFLAGS_NUT_RPATH)
 AC_SUBST(LDFLAGS_NUT_RPATH_CXX)
 AC_SUBST(DRVPATH)
 AC_SUBST(SBINDIR)
-AC_SUBST(PORT)
+AC_SUBST(NUT_PORT)
 AC_SUBST(RUN_AS_USER)
 AC_SUBST(RUN_AS_GROUP)
 AC_SUBST(SUN_LIBUSB)
@@ -6161,6 +6409,7 @@ AC_SUBST(systemdsystemunitdir)
 AC_SUBST(systemdsystempresetdir)
 AC_SUBST(systemdshutdowndir)
 AC_SUBST(systemdtmpfilesdir)
+AC_SUBST(systemdsysusersdir)
 AC_SUBST(auglensdir)
 AC_SUBST(auglenstestsdir)
 AC_SUBST(hotplugdir)
@@ -6320,17 +6569,19 @@ dnl #    with hints about _Nullable vs. _Nonnull pointers. The general idea
 dnl #    is respectable for memory safety and could be addressed for true old
 dnl #    C99 toolkits and current language spec e.g. with macros... later.
 dnl #    Currently it is more like whack-a-mole as distros update headers.
+dnl # -Wno-c11-extensions -- clang-21 on Ubuntu 26.04 at least complains a lot
+dnl #    about system headers (string.h, cdefs.h, etc.) using __glibc_const_generic
 AS_CASE(["${nut_enable_warnings}"],
     [all], [
         CFLAGS="${CFLAGS} -Wall"
         CXXFLAGS="${CXXFLAGS} -Wall"
         ],
     [clang-hard], [
-        CFLAGS="${CFLAGS} -ferror-limit=0 -Wno-system-headers -Wno-missing-include-dirs -Wall -Wextra -Weverything -Wno-disabled-macro-expansion -Wno-unused-macros -Wno-reserved-id-macro -Wno-padded -Wno-documentation -fcomment-block-commands=retval -Wno-documentation-unknown-command -Wno-cast-qual -pedantic -Wno-fuse-ld-path -Wno-unsafe-buffer-usage"
+        CFLAGS="${CFLAGS} -ferror-limit=0 -Wno-system-headers -Wno-missing-include-dirs -Wall -Wextra -Weverything -Wno-disabled-macro-expansion -Wno-unused-macros -Wno-reserved-id-macro -Wno-padded -Wno-documentation -fcomment-block-commands=retval -Wno-documentation-unknown-command -Wno-cast-qual -Wno-c11-extensions -pedantic -Wno-fuse-ld-path -Wno-unsafe-buffer-usage"
         CXXFLAGS="${CXXFLAGS} -ferror-limit=0 -Wno-system-headers -Wno-missing-include-dirs -Wall -Wextra -Weverything -Wno-disabled-macro-expansion -Wno-unused-macros -Wno-reserved-id-macro -Wno-padded -Wno-documentation -fcomment-block-commands=retval -Wno-documentation-unknown-command -Wno-cast-qual -Wno-c++98-compat-pedantic -Wno-c++98-compat -Wno-exit-time-destructors -Wno-fuse-ld-path -Wno-unsafe-buffer-usage"
         ],
     [clang-medium], [
-        CFLAGS="${CFLAGS} -ferror-limit=0 -Wno-system-headers -Wno-missing-include-dirs -Wall -Wextra -Weverything -Wno-disabled-macro-expansion -Wno-unused-macros -Wno-reserved-id-macro -Wno-padded -Wno-documentation -fcomment-block-commands=retval -Wno-documentation-unknown-command -Wno-cast-qual -pedantic -Wno-fuse-ld-path -Wno-unsafe-buffer-usage -Wno-float-conversion -Wno-double-promotion -Wno-implicit-float-conversion -Wno-conversion -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-function-pointer-types-strict -Wno-nullable-to-nonnull-conversion"
+        CFLAGS="${CFLAGS} -ferror-limit=0 -Wno-system-headers -Wno-missing-include-dirs -Wall -Wextra -Weverything -Wno-disabled-macro-expansion -Wno-unused-macros -Wno-reserved-id-macro -Wno-padded -Wno-documentation -fcomment-block-commands=retval -Wno-documentation-unknown-command -Wno-cast-qual -Wno-c11-extensions -pedantic -Wno-fuse-ld-path -Wno-unsafe-buffer-usage -Wno-float-conversion -Wno-double-promotion -Wno-implicit-float-conversion -Wno-conversion -Wno-incompatible-pointer-types-discards-qualifiers -Wno-incompatible-function-pointer-types-strict -Wno-nullable-to-nonnull-conversion"
         CXXFLAGS="${CXXFLAGS} -ferror-limit=0 -Wno-system-headers -Wno-missing-include-dirs -Wall -Wextra -Weverything -Wno-disabled-macro-expansion -Wno-unused-macros -Wno-reserved-id-macro -Wno-padded -Wno-documentation -fcomment-block-commands=retval -Wno-documentation-unknown-command -Wno-cast-qual -Wno-c++98-compat-pedantic -Wno-c++98-compat -Wno-exit-time-destructors -Wno-global-constructors -Wno-fuse-ld-path -Wno-unsafe-buffer-usage -Wno-nullable-to-nonnull-conversion"
         ],
     [clang-minimal], [
@@ -6534,13 +6785,14 @@ dnl When building ON Windows (mingw/MSYS2, cygwin, etc.) fudge these
 dnl path strings back to what native OS methods would recognize.
 AS_CASE([${target_os}],
     [*mingw*], [
-        AC_MSG_NOTICE([Will try to resolve Windows paths to ABS_TOP_SRCDIR and ABS_TOP_BUILDDIR with cygpath or mingw/msys pwd -W tool (would fail if not a native build)])
+        AC_MSG_NOTICE([Will try to resolve Windows paths to ABS_TOP_SRCDIR and ABS_TOP_BUILDDIR with 'cygpath -ma' or mingw/msys 'pwd -W' tool (would fail if not a native build)])
 
-        dnl Cygwin path resolver
+        dnl Cygwin path resolver; note it may have already been found
+        dnl by autotools core code earlier in the generated script:
         AC_CHECK_TOOL([CYGPATH], [cygpath], [none])
-        AS_IF([test "x${CYGPATH}" != "xnone" && test x"`${CYGPATH}`" != x], [
-            tmp="`${CYGPATH} -m \"${ABS_TOP_BUILDDIR}\" | sed -e 's,/,\\\\\\\\,g'`" && test -n "$tmp" && test -d "$tmp" && ABS_TOP_BUILDDIR="$tmp"
-            tmp="`${CYGPATH} -m \"${ABS_TOP_SRCDIR}\" | sed 's,/,\\\\\\\\,g'`" && test -n "$tmp" && test -d "$tmp" && ABS_TOP_SRCDIR="$tmp"
+        AS_IF([test "x${CYGPATH}" != "xnone" && test x"`${CYGPATH} -m -a .`" != x], [
+            tmp="`${CYGPATH} -m -a \"${ABS_TOP_BUILDDIR}\" | sed -e 's,/,\\\\\\\\,g'`" && test -n "$tmp" && test -d "$tmp" && ABS_TOP_BUILDDIR="$tmp"
+            tmp="`${CYGPATH} -m -a \"${ABS_TOP_SRCDIR}\" | sed 's,/,\\\\\\\\,g'`" && test -n "$tmp" && test -d "$tmp" && ABS_TOP_SRCDIR="$tmp"
         ],[
             dnl MSYS pwd with -W option to resolve
             AC_CHECK_TOOL([PWDTOOL], [pwd], [none])
@@ -6553,9 +6805,12 @@ AS_CASE([${target_os}],
         AC_MSG_NOTICE([FWIW, assuming ABS_TOP_SRCDIR="$ABS_TOP_SRCDIR" and ABS_TOP_BUILDDIR="$ABS_TOP_BUILDDIR"])
 ])
 
-dnl Use these at best for tests (e.g. nutconf), not production code:
+dnl Use these at best for tests (e.g. nutconf, NIT), not production code:
 AC_DEFINE_UNQUOTED([ABS_TOP_SRCDIR], ["${ABS_TOP_SRCDIR}"], [NUT source directory when the build was configured])
 AC_DEFINE_UNQUOTED([ABS_TOP_BUILDDIR], ["${ABS_TOP_BUILDDIR}"], [NUT build directory when the build was configured])
+
+AC_SUBST(ABS_TOP_SRCDIR)
+AC_SUBST(ABS_TOP_BUILDDIR)
 
 dnl ---------------------------------------------------------------------
 AC_MSG_CHECKING([whether to install External API integration script: Enphase Monitor])
@@ -6635,6 +6890,39 @@ EOF])
 # Some NUT variants also maintain an ALTSTATEPATH:
 d @ALTSTATEPATH@ 0770 @RUN_AS_USER@ @RUN_AS_GROUP@ - -
 X @ALTSTATEPATH@
+EOF])
+])
+AC_MSG_RESULT([done])
+
+dnl ---------------------------------------------------------------------
+AC_MSG_CHECKING([whether to customize ${TOP_BUILDDIR}/scripts/systemd/nut-common-sysusers.conf.in for this system])
+AS_IF([test -n "$systemdsysusersdir"],
+    [mkdir -p "${TOP_BUILDDIR}"/scripts/systemd
+     cat > "${TOP_BUILDDIR}"/scripts/systemd/nut-common-sysusers.conf.in << EOF
+# Network UPS Tools (NUT) systemd integration
+# Distributed under the terms of GPLv2+
+# See https://networkupstools.org/
+# and https://github.com/networkupstools/nut/
+EOF
+    AS_IF([test -n "${RUN_AS_USER}" && test x"${RUN_AS_USER}" != xnobody && test x"${RUN_AS_USER}" != xroot],
+        dnl Locked users ('!') are supported since v257
+        AS_IF([test x"$have_PKG_CONFIG" = xyes && $PKG_CONFIG --atleast-version=257 systemd 2>/dev/null], [
+            cat >> "${TOP_BUILDDIR}"/scripts/systemd/nut-common-sysusers.conf.in << EOF
+u! @RUN_AS_USER@ - - @STATEPATH@
+EOF
+        ], [
+            cat >> "${TOP_BUILDDIR}"/scripts/systemd/nut-common-sysusers.conf.in << EOF
+u @RUN_AS_USER@ - - @STATEPATH@
+EOF
+        ])
+    )
+    AS_IF([test -n "${RUN_AS_GROUP}" && test x"${RUN_AS_GROUP}" != xnobody && test x"${RUN_AS_GROUP}" != xnogroup && test x"${RUN_AS_GROUP}" != xroot],
+        [cat >> "${TOP_BUILDDIR}"/scripts/systemd/nut-common-sysusers.conf.in << EOF
+g @RUN_AS_GROUP@
+EOF])
+    AS_IF([test -n "${RUN_AS_USER}" && test x"${RUN_AS_USER}" != xnobody && test x"${RUN_AS_USER}" != xroot && test -n "${RUN_AS_GROUP}" && test x"${RUN_AS_GROUP}" != xnobody && test x"${RUN_AS_GROUP}" != xnogroup && test x"${RUN_AS_GROUP}" != xroot],
+        [cat >> "${TOP_BUILDDIR}"/scripts/systemd/nut-common-sysusers.conf.in << EOF
+m @RUN_AS_USER@ @RUN_AS_GROUP@
 EOF])
 ])
 AC_MSG_RESULT([done])
@@ -6777,6 +7065,159 @@ AC_MSG_RESULT([C: ${nut_with_debuginfo_C}; C++: ${nut_with_debuginfo_CXX}])
 dnl Only in the end, do you understand...
 AC_SUBST(CPPUNIT_NUT_CXXFLAGS)
 
+dnl We can use OpenSSL or NSS in C++ libnutclient builds, and their CFLAGS on
+dnl various platforms can pull in options which can confuse C++ preprocessing,
+dnl such as -isystem settings which preclude looking for standard headers (due
+dnl to `#include_next` involved in C++ headers ignoring certain directories to
+dnl avoid loops).
+
+dnl There is a bit of trouble with third-party dependencies whose pkgconf
+dnl files or our own code add `-isystem` entries (to avoid warnings about
+dnl sloppy code, among other things): this can circumvent (clang++) search
+dnl for C++ headers. Simple `-I/path/name` is okay in this regard.
+dnl Such a problem for NUT was only seen/reported on Termux and MSYS2 so far.
+
+LIBSSL_CXXFLAGS="${LIBSSL_CFLAGS}"
+nut_with_ssl_cxx=no
+AS_IF([test "${have_cxx11}" = yes && test -n "${LIBSSL_CXXFLAGS}"], [
+    AC_MSG_CHECKING([if C++ support in current compiler needs flag tweaks to build with SSL libs])
+
+    my_CFLAGS="${CFLAGS}"
+    my_CPPFLAGS="${CPPFLAGS}"
+    my_CXXFLAGS="${CXXFLAGS}"
+    my_FIXX=""
+    my_INCLUDEDIR_C=""
+    my_INCLUDEDIR_CXX=""
+    my_FIXED=false
+
+    AC_LANG_PUSH([C++])
+
+    CPLUSPLUS_DECL='#include <iostream>'
+    CPLUSPLUS_MAIN='std::cout << "hello world" << std::endl'
+
+    CXXFLAGS="${my_CXXFLAGS} ${LIBSSL_CFLAGS}"
+    AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[${CPLUSPLUS_DECL}]], [[${CPLUSPLUS_MAIN}]])],
+        [AC_MSG_RESULT([LIBSSL flags work out of the box])
+         my_FIXED=true],
+        [AC_MSG_RESULT([This system needs help. We have a few platform-dependent ideas ready...])
+         AS_IF([test x"${TERMUX__PREFIX-}" != x && test -d "${TERMUX__PREFIX-}/include"],
+            [AC_MSG_CHECKING([whether tweaks for Termux via TERMUX__PREFIX would help])
+             dnl https://github.com/termux/termux-packages/issues/23578
+             dnl https://github.com/termux/termux-packages/pull/23579 :
+             dnl # set the proper header include order - first package includes, then prefix includes
+             dnl # -isystem${TERMUX_PREFIX}/include/c++/v1 is needed here for on-device building to work correctly
+             dnl NOTE: two underscores when building, at least on android directly
+             my_INCLUDEDIR_C="${TERMUX__PREFIX}/include"
+            ], [
+             AS_IF([test x"${MSYS_HOME-}" != x && test -d "${MSYS_HOME-}/../include"],
+                [AC_MSG_CHECKING([whether tweaks for MSYS2 via MSYS_HOME would help])
+                 dnl my_INCLUDEDIR_C="${MSYS_HOME}/../include"
+                 my_INCLUDEDIR_C="`printf '%s' \"${MSYS_HOME}/../include\" | tr '\\' '/'`"],
+                [AS_IF([test x"${MSYSTEM_PREFIX-}" != x && test -d "${MSYSTEM_PREFIX-}/include"],
+                    [AC_MSG_CHECKING([whether tweaks for MSYS2 via MSYSTEM_PREFIX would help])
+                     my_INCLUDEDIR_C="${MSYSTEM_PREFIX-}/include"
+                    ])
+                ])
+            ])
+
+        AS_IF([test -n "$my_INCLUDEDIR_C"], [
+            AS_IF([test "${CLANGCC}" = "yes" && test -d "${my_INCLUDEDIR_C}/c++/v1"],
+                 [my_INCLUDEDIR_CXX="${my_INCLUDEDIR_C}/c++/v1"],
+                 [AS_IF([test "${GCC}" = "yes" && test -d "${my_INCLUDEDIR_C}/c++/${CXX_VERSION_NUMBER}"],
+                     [my_INCLUDEDIR_CXX="${my_INCLUDEDIR_C}/c++/${CXX_VERSION_NUMBER}"]
+                  )]
+                )
+            ])
+
+        AS_IF([test -n "$my_INCLUDEDIR_CXX"], [
+            my_FIXX="-isystem${my_INCLUDEDIR_CXX} -isystem${my_INCLUDEDIR_C}"
+            CXXFLAGS="${my_CXXFLAGS} ${my_FIXX} ${LIBSSL_CFLAGS}"
+            AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[${CPLUSPLUS_DECL}]], [[${CPLUSPLUS_MAIN}]])],
+                [AC_MSG_RESULT([yes, tweaking -isystem preference helps for LIBSSL flags])
+                 LIBSSL_CXXFLAGS="${my_FIXX} ${LIBSSL_CFLAGS}"
+                 my_FIXED=true],
+                [AC_MSG_RESULT([no, tweaking -isystem preference did not help])
+                 AS_IF([test x"${nut_enable_configure_debug}" = xyes], [
+                    AC_MSG_NOTICE([(CONFIGURE-DEVEL-DEBUG) Tried LIBSSL_CXXFLAGS="${my_FIXX-} ${LIBSSL_CFLAGS}"])
+                 ])
+                ])
+            ],[AC_MSG_RESULT([no, could not determine directories to tweak -isystem preference])]
+            )
+
+        AS_IF([test "$my_FIXED" = false], [
+            AS_IF([test x"${nut_enable_configure_debug}" = xyes], [
+                AC_MSG_NOTICE([(CONFIGURE-DEVEL-DEBUG) Tried my_INCLUDEDIR_C="${my_INCLUDEDIR_C-}"])
+                AC_MSG_NOTICE([(CONFIGURE-DEVEL-DEBUG) Tried my_INCLUDEDIR_CXX="${my_INCLUDEDIR_CXX-}"])
+                AC_MSG_NOTICE([(CONFIGURE-DEVEL-DEBUG) CXX_VERSION_NUMBER="${CXX_VERSION_NUMBER}"])
+            ])
+
+            AS_CASE([${LIBSSL_CXXFLAGS}],
+                [*-isystem*],
+                    [AC_MSG_CHECKING([whether removing -isystem from LIBSSL_CXXFLAGS would help])
+                     my_FIXX=""
+                     my_SKIP=false
+                     for TOKEN in $LIBSSL_CXXFLAGS ; do
+                        AS_CASE([${TOKEN}],
+                            [-isystem],  [my_SKIP=true],
+                            [-isystem*], [my_SKIP=false],
+                                [AS_IF([test "${my_SKIP}" = true],
+                                    [my_SKIP=false],
+                                    [my_FIXX="$my_FIXX $TOKEN"]
+                                 )]
+                            )
+                     done
+                     unset TOKEN
+                     unset my_SKIP
+
+                     CXXFLAGS="${my_CXXFLAGS} ${my_FIXX}"
+                     AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[${CPLUSPLUS_DECL}]], [[${CPLUSPLUS_MAIN}]])],
+                        [AC_MSG_RESULT([yes, removing -isystem helps for LIBSSL flags])
+                         LIBSSL_CXXFLAGS="${my_FIXX}"
+                         my_FIXED=true],
+                        [AC_MSG_RESULT([no, removing -isystem from LIBSSL_CXXFLAGS did not help])
+                         AS_IF([test x"${nut_enable_configure_debug}" = xyes], [
+                            AC_MSG_NOTICE([(CONFIGURE-DEVEL-DEBUG) Tried LIBSSL_CXXFLAGS="${my_FIXX-}"])
+                         ])
+                        ]
+                        )
+                    ]
+                )
+            ])
+
+        AS_IF([test "$my_FIXED" = true],
+            [nut_with_ssl_cxx=yes],
+            [AC_MSG_RESULT([LIBSSL flags just won't work with C++])
+             dnl We disable just SSL support in the C++ library
+            ])
+        ]
+	)
+
+    CFLAGS="${my_CFLAGS}"
+    CPPFLAGS="${my_CPPFLAGS}"
+    CXXFLAGS="${my_CXXFLAGS}"
+    AC_LANG_POP([C++])
+    unset CPLUSPLUS_MAIN
+    unset CPLUSPLUS_DECL
+    unset my_FIXX
+    unset my_FIXED
+    unset my_INCLUDEDIR_C
+    unset my_INCLUDEDIR_CXX
+])
+
+AC_SUBST(LIBSSL_CXXFLAGS)
+NUT_REPORT_FEATURE([enable SSL support in C++ client library], [${nut_with_ssl_cxx}], [${nut_ssl_lib}],
+					[WITH_SSL_CXX], [Define to enable SSL in libnutclient])
+
+AC_DEFINE_UNQUOTED([EXEEXT], ["${EXEEXT}"], [Platform-specific extension for binary program files (may be empty where not required)])
+AC_SUBST(EXEEXT)
+
+dnl In CGI HTML templates we have a VERSION token parsed by upsstats.cgi
+dnl to provide the run-time binary version (with unmodified HTML template),
+dnl but now that with EXEEXT they became .in templates first, the autoconf
+dnl VERSION expansion wins first. So hacking around it to generate a @TOKEN@:
+ESCAPED_TEMPLATE_VERSION='@VERSION@'
+AC_SUBST(ESCAPED_TEMPLATE_VERSION)
+
 AC_MSG_NOTICE([Generating "data" files from templates, see below for executable scripts])
 AC_CONFIG_FILES([
  clients/Makefile
@@ -6784,6 +7225,10 @@ AC_CONFIG_FILES([
  conf/Makefile
  conf/upsmon.conf.sample
  conf/upssched.conf.sample
+ conf/upsstats.html.sample
+ conf/upsstats-single.html.sample
+ conf/upsstats-modern-list.html.sample
+ conf/upsstats-modern-single.html.sample
  data/htmlcgi/header.html
  data/htmlcgi/Makefile
  data/Makefile
@@ -6830,6 +7275,7 @@ AC_CONFIG_FILES([
  scripts/systemd/Makefile
  scripts/systemd/nut.target
  scripts/systemd/nut-common-tmpfiles.conf
+ scripts/systemd/nut-common-sysusers.conf
  scripts/systemd/nut-driver.target
  scripts/systemd/nut-driver@.service
  scripts/systemd/nut-logger.service
@@ -6840,6 +7286,7 @@ AC_CONFIG_FILES([
  scripts/systemd/nut-driver-enumerator-daemon.service
  scripts/systemd/nut-driver-enumerator-daemon-activator.service
  scripts/systemd/nut-driver-enumerator-daemon-activator.path
+ scripts/systemd/nut-udev-settle.service
  scripts/Solaris/nut-driver-enumerator.xml
  scripts/Solaris/nut-driver.xml
  scripts/Solaris/nut-logger.xml
@@ -7002,4 +7449,7 @@ AS_IF([test x"${theMAKE}" = x], [theMAKE="make"])
 AC_MSG_NOTICE([==========================================================])
 AC_MSG_NOTICE([Configuration complete: Run '$theMAKE' to build ${NUT_SOURCE_VERSION_REPORT} now.])
 AC_MSG_NOTICE([You may use parallelism if supported by your hardware and 'make' implementation, e.g. '$theMAKE -j 8'])
+AS_IF([test x"${dotMAKE}" = x.MAKE], [
+AC_MSG_NOTICE([WARNING: do not use (parallel) GNU make with this build configuration!])
+])
 AC_MSG_NOTICE([==========================================================])

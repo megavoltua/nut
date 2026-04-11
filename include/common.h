@@ -50,19 +50,19 @@
 #include <sys/stat.h>
 
 #ifdef HAVE_SYS_SIGNAL_H
-#include <sys/signal.h>
+# include <sys/signal.h>
 #endif
 #ifdef HAVE_SIGNAL_H
-#include <signal.h>
+# include <signal.h>
 #endif
 
 #include <stdlib.h>
 
 #ifdef HAVE_STRINGS_H
-#include <strings.h>	/* for strncasecmp() and strcasecmp() */
+# include <strings.h>	/* for strncasecmp() and strcasecmp() */
 #endif
 #ifdef HAVE_STRING_H
-#include <string.h>	/* for strdup() and many others */
+# include <string.h>	/* for strdup() and many others */
 #endif
 
 #ifndef WIN32
@@ -117,6 +117,13 @@ extern "C" {
 /* *INDENT-ON* */
 #endif
 
+#ifndef MAX
+# define	MAX(p,q)	(((p) >= (q)) ? (p) : (q))
+#endif
+#ifndef MIN
+# define	MIN(p,q)	(((p) <= (q)) ? (p) : (q))
+#endif
+
 /* POSIX requires these, and most but not all systems use same
  * magical numbers for the file descriptors... yep, not all do!
  */
@@ -138,7 +145,7 @@ extern "C" {
  * including pipes for driver-upsd communications: */
 # define TYPE_FD int
 # define ERROR_FD (-1)
-# define VALID_FD(a) (a>=0)
+# define VALID_FD(a) ((a)>=0)
 
 /* Type of what NUT serial/SHUT methods juggle: */
 # define TYPE_FD_SER TYPE_FD
@@ -158,15 +165,20 @@ extern "C" {
  */
 # define TYPE_FD HANDLE
 # define ERROR_FD (INVALID_HANDLE_VALUE)
-# define VALID_FD(a) (a!=INVALID_HANDLE_VALUE)
+# define VALID_FD(a) ((a)!=INVALID_HANDLE_VALUE)
 
 # ifndef INVALID_SOCKET
-#  define INVALID_SOCKET -1
+#  define INVALID_SOCKET ((SOCKET)(-1))
 # endif
 
+/* Bitness-dependent "pointer-sized unsigned integer" (usually 32 or 64 bits) */
 # define TYPE_FD_SOCK SOCKET
 # define ERROR_FD_SOCK INVALID_SOCKET
-# define VALID_FD_SOCK(a) (a!=INVALID_SOCKET)
+/* Valid range for SOCKET is 0..(INVALID_SOCKET-1) and there is no special
+ * check for "-1" (may be or not be coincidental by casting and/or definition
+ * in existing headers) nor generally negative values, as in Unix socket API.
+ */
+# define VALID_FD_SOCK(a) ((a)!=INVALID_SOCKET)
 
 typedef struct serial_handler_s {
 	HANDLE handle;
@@ -181,7 +193,7 @@ typedef struct serial_handler_s {
 
 # define TYPE_FD_SER serial_handler_t *
 # define ERROR_FD_SER (NULL)
-# define VALID_FD_SER(a) (a!=NULL)
+# define VALID_FD_SER(a) ((a)!=NULL)
 
 /* difftime returns erroneous value so we use this macro */
 # undef difftime
@@ -286,6 +298,22 @@ const char *getproctag(void);
  */
 void setproctag(const char *tag);
 
+/* These are exported for internal use between NUT libraries (common,
+ * libupsclient, libnutscan...) and not intended for arbitrary consumers,
+ * except maybe those that have a chance to be linked with both common
+ * and some of the other libraries, with or without libnutprivate-common
+ * as a single dynamically loaded object behind them. To make sense of
+ * it, every instance has a cookie so they can compare notes; it can be
+ * passed to relevant public libraries' methods.
+ */
+const void *nut_common_cookie(void);
+/* Gets caller-allocated string which this method frees if not NULL (in atexit()),
+ * typically returned by getmyprocname() */
+void setmyprocname(const char *s);
+/* Returns NULL or a string from getprocname(myPid) that the caller should free() */
+const char *getmyprocname(void);
+const char *getmyprocbasename(void);
+
 /* do this here to keep pwd/grp stuff out of the main files */
 struct passwd *get_user_pwent(const char *name);
 
@@ -384,9 +412,12 @@ int	str_contains_token(const char *string, const char *token);
  * checking for uniqueness and going to add a newly seen token.
  * If such callback returns 0, abort the addition of token and return -3.
  */
-int	str_add_unique_token(char *tgt, size_t tgtsize, const char *token,
-			    int (*callback_always)(char *, size_t, const char *),
-			    int (*callback_unique)(char *, size_t, const char *)
+int	str_add_unique_token(
+	char *tgt,
+	size_t tgtsize,
+	const char *token,
+	int (*callback_always)(char *, size_t, const char *),
+	int (*callback_unique)(char *, size_t, const char *)
 );
 
 /* Report maximum platform value for the pid_t */
@@ -430,6 +461,30 @@ int sendsignalfnaliases(const char *pidfn, const char * sig, const char **progna
 /* return a pointer to character inside the file that starts a basename
  * caller should strdup() a copy to retain beyond the lifetime of "file" */
 const char *xbasename(const char *file);
+/* like above, but also strip platform-specific EXEEXT if present,
+ * e.g. convert ".../upsd.exe" => "upsd"; returns a newly allocated
+ * string that the caller must free() eventually, or NULL in case
+ * of errors (e.g. NULL or empty input or xbasename() output. */
+char *xbasename_no_ext(const char *file);
+/* like above with fallback support; always returns a new allocation,
+ * even if a copy of inputs or "UNDEFINED" if can not determine the
+ * value (and fallback is NULL) */
+char *xbasename_no_ext_default(const char *file, const char *fallback);
+
+/* Used in main() and similar methods to set a "const char *progname" from
+ * argv[0] in a way that this may be either a pointer to sub-string of
+ * that argv[0] or to the fallback (if not NULL) without wasting RAM for
+ * copies, or to a variable automatically cleaned by the NUT common
+ * library at exit. Uses logic similar to xbasename_no_ext_default()
+ * internally to strip EXEEXT on platforms that have it.
+ * Call with getprogname_argv0_default(NULL, NULL) would return the
+ * previously saved value, or "UNDEFINED" if never set yet. */
+const char *getprogname_argv0_default(const char *file, const char *fallback);
+
+/* enable writing upslog_with_errno() and upslogx() type messages to
+ * the stdout instead of stderr, and end them with HTML <BR/> tag,
+ * to help troubleshoot NUT CGI programs specifically */
+void cgilogbit_set(void);
 
 /* enable writing upslog_with_errno() and upslogx() type messages to
    the syslog */
@@ -451,11 +506,17 @@ const char * rootpidpath(void);
 void check_unix_socket_filename(const char *fn);
 
 #ifdef NUT_WANT_INET_NTOP_XX
-/* NOT THREAD SAFE!
- * Helpers to convert one IP address to string from different structure types
- * Return pointer to internal buffer, or NULL and errno upon errors */
-const char *inet_ntopSS(struct sockaddr_storage *s);
-const char *inet_ntopAI(struct addrinfo *ai);
+/* Helpers to convert one IP address to string from different structure types
+ * Return pointer to internal buffer (in NOT THREAD SAFE! methods named as such)
+ * or caller-provided buffer or an allocated buffer that caller must free (in
+ * the "x" methods), or NULL and errno upon errors */
+const char *inet_ntopSS(struct sockaddr_storage *s, char *addrstr, size_t addrstrsz);
+const char *inet_ntopSS_thread_unsafe(struct sockaddr_storage *s);
+const char *xinet_ntopSS(struct sockaddr_storage *s);
+
+const char *inet_ntopAI(struct addrinfo *ai, char *addrstr, size_t addrstrsz);
+const char *inet_ntopAI_thread_unsafe(struct addrinfo *ai);
+const char *xinet_ntopAI(struct addrinfo *ai);
 #endif	/* NUT_WANT_INET_NTOP_XX */
 
 /* Provide integration for systemd inhibitor interface (where available,
@@ -518,6 +579,19 @@ int upsnotify(upsnotify_state_t state, const char *fmt, ...)
  */
 #define UPSNOTIFY_EXTEND_TIMEOUT_USEC_INFINITY	((uint64_t)INT64_MAX)
 extern uint64_t upsnotify_extend_timeout_usec_default, upsnotify_extend_timeout_usec;
+
+/* The NUT common library code is included in several other
+ * libraries, often with their private copies of variables,
+ * so we want to synchronize them.
+ * If internal `upslog_start` value is not yet set, we set
+ * it from *tv (or current time if tv==NULL), otherwise the
+ * method is no-op (keep and report the original setting).
+ * Returns the pointer to the currently set value, so it
+ * can be propagated or used in difftime() computations.
+ * NOTE: In WIN32 builds also enforces line-buffering for
+ * stdout and stderr streams.
+ */
+struct timeval *upslog_start_sync(struct timeval *tv);
 
 /* upslog*() messages are sent to syslog always;
  * their life after that is out of NUT's control */
@@ -719,12 +793,12 @@ char * get_libname(const char* base_libname);
 /* Provide declarations for getopt() global variables */
 
 #ifdef NEED_GETOPT_H
-#include <getopt.h>
+# include <getopt.h>
 #else
-#ifdef NEED_GETOPT_DECLS
+# ifdef NEED_GETOPT_DECLS
 extern char *optarg;
 extern int optind;
-#endif /* NEED_GETOPT_DECLS */
+# endif /* NEED_GETOPT_DECLS */
 #endif /* HAVE_GETOPT_H */
 
 /* logging flags: bitmask! */
@@ -733,6 +807,12 @@ extern int optind;
 #define UPSLOG_SYSLOG		0x0002
 #define UPSLOG_STDERR_ON_FATAL	0x0004
 #define UPSLOG_SYSLOG_ON_FATAL	0x0008
+
+/* Special cases, primarily for NUT CGI programs to dump logs
+ *  in a way better usable when troubleshooting with a browser:
+ */
+#define UPSLOG_STDOUT		0x0010
+#define UPSLOG_CGI_BR		0x0020
 
 #ifndef HAVE_SETEUID
 #	define seteuid(x) setresuid(-1,x,-1)    /* Works for HP-UX 10.20 */
@@ -784,6 +864,9 @@ double difftimeval(struct timeval x, struct timeval y);
 #if defined(HAVE_CLOCK_GETTIME) && defined(HAVE_CLOCK_MONOTONIC) && HAVE_CLOCK_GETTIME && HAVE_CLOCK_MONOTONIC
 double difftimespec(struct timespec x, struct timespec y);
 #endif
+
+/* count the time elapsed since start in milliseconds */
+long elapsed_since_timeval(struct timeval *start);
 
 #ifndef HAVE_USLEEP
 /* int __cdecl usleep(unsigned int useconds); */
