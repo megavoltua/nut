@@ -2777,6 +2777,11 @@ static void upsmon_cleanup(void)
 	int	i;
 	utype_t	*utmp, *unext;
 
+	/* Flush *our* output before possibly failing in third-party code
+	 * (e.g. SSL libs), so client consumers have a chance to see it */
+	fflush(stdout);
+	fflush(stderr);
+
 	/* close all fds */
 	utmp = firstups;
 
@@ -2798,6 +2803,9 @@ static void upsmon_cleanup(void)
 	for (i = 0; notifylist[i].name != NULL; i++) {
 		free(notifylist[i].msg);
 	}
+
+	fflush(stdout);
+	fflush(stderr);
 
 	upscli_cleanup();
 
@@ -4188,8 +4196,12 @@ int main(int argc, char *argv[])
 	}
 
 	if (upscli_init2(certverify, certpath, certname, certpasswd, certfile) < 0) {
-		upsnotify(NOTIFY_STATE_STOPPING, "Failed upscli_init2()");
-		exit(EXIT_FAILURE);
+		if (certverify || certpath || certname || certpasswd || certfile) {
+			upslogx(LOG_WARNING, "Failed upscli_init2() while SSL was required");
+			upsnotify(NOTIFY_STATE_STOPPING, "Failed upscli_init2() while SSL was required");
+			exit(EXIT_FAILURE);
+		}
+		upslogx(LOG_WARNING, "Failed upscli_init2() but SSL ability was not required");
 	}
 
 	/* prep our signal handlers */

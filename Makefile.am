@@ -136,24 +136,24 @@ install-fanout-cleanup: install-recursive @dotMAKE@
 # Called from generated-sources-with-a-touch:
 touch-include-all-nut_version-generated.timestamp:
 	@[ -s include/nut_version.h ]
-	@touch -r include/nut_version.h -d '-10 seconds' include/.all.nut_version-generated.timestamp && exit ; \
-	 touch -d '1970-01-01T00:00:00' include/.all.nut_version-generated.timestamp && exit ; \
+	@touch -r include/nut_version.h -d '-10 seconds' include/.all.nut_version-generated.timestamp 2>/dev/null && exit ; \
+	 touch -t '197001010000.00' include/.all.nut_version-generated.timestamp && exit ; \
 	 touch include/.all.nut_version-generated.timestamp
 
 touch-clients-all-libupsclient_version-generated.timestamp:
 	@[ -s clients/libupsclient-version.h ]
-	@touch -r clients/libupsclient-version.h -d '-10 seconds' clients/.all.libupsclient_version-generated.timestamp && exit ; \
-	 touch -d '1970-01-01T00:00:00' clients/.all.libupsclient_version-generated.timestamp && exit ; \
+	@touch -r clients/libupsclient-version.h -d '-10 seconds' clients/.all.libupsclient_version-generated.timestamp 2>/dev/null && exit ; \
+	 touch -t '197001010000.00' clients/.all.libupsclient_version-generated.timestamp && exit ; \
 	 touch clients/.all.libupsclient_version-generated.timestamp
 
 touch-docs-man-all-linkman-generated.timestamp:
 	@[ -s docs/man/linkman-driver-names.txt ] && [ -s docs/man/linkman-drivertool-names.txt ]
 	@if test -n "`find docs/man/linkman-driver-names.txt -newer docs/man/linkman-drivertool-names.txt`" ; then \
-	    touch -r docs/man/linkman-drivertool-names.txt -d '-10 seconds' docs/man/.all.nut_linkman-generated.timestamp && exit ; \
+	    touch -r docs/man/linkman-drivertool-names.txt -d '-10 seconds' docs/man/.all.nut_linkman-generated.timestamp 2>/dev/null && exit ; \
 	 else \
-	    touch -r docs/man/linkman-driver-names.txt -d '-10 seconds' docs/man/.all.nut_linkman-generated.timestamp && exit ; \
+	    touch -r docs/man/linkman-driver-names.txt -d '-10 seconds' docs/man/.all.nut_linkman-generated.timestamp 2>/dev/null && exit ; \
 	 fi ; \
-	 touch -d '1970-01-01T00:00:00' docs/man/.all.nut_linkman-generated.timestamp && exit ; \
+	 touch -t '197001010000.00' docs/man/.all.nut_linkman-generated.timestamp && exit ; \
 	 touch docs/man/.all.nut_linkman-generated.timestamp
 
 # Verbosity for fanout rule tracing; 0/1 (or "default" that may auto-set
@@ -266,6 +266,9 @@ EXTRA_DIST = LICENSE-GPL2 LICENSE-GPL3 LICENSE-DCO MAINTAINERS
 # and GitHub UIs to render the source files in a pretty fashion, we need
 # to list them:
 EXTRA_DIST += INSTALL.nut.adoc UPGRADING.adoc TODO.adoc NEWS.adoc README.adoc
+
+# Imposed by GitHub somewhat:
+EXTRA_DIST += SECURITY.md
 
 # The document is now part of qa-guide; the script might be a bit git-oriented,
 # but can be useful in builds from tarball, probably. Anyhow, having the doc
@@ -1286,6 +1289,9 @@ dist-hash: nut-@PACKAGE_VERSION@.tar.gz
 # NOT part of standard tarball, though
 EXTRA_DIST_DOCS = VERSION_* *.adoc-parsed
 
+# Let end-users now how to report any troubles they see
+EXTRA_DIST_DOCS += SECURITY.md
+
 if WITH_CHANGELOG_TEXT
 EXTRA_DIST_DOCS += ChangeLog
 endif WITH_CHANGELOG_TEXT
@@ -1684,10 +1690,10 @@ install-win-bundle-thirdparty: @dotMAKE@
 	    | while read D ; do \
 	        BD="`basename \"$$D\"`" ; \
 	        if test -e './$(bindir)/'"$$BD" && diff './$(bindir)/'"$$BD" "$$D" 2>/dev/null >/dev/null ; then \
-	            echo "   DLL->bin       $$D : skip (already installed there)" 2>&1 ; \
+	            echo "   DLL->bin	SKIP	$$D : skip (already installed there)" 2>&1 ; \
 	            continue ; \
 	        fi ; \
-	        echo "   DLL->bin       $$D" 2>&1 ; \
+	        echo "   DLL->bin	COPY	$$D" 2>&1 ; \
 	        cp -pf "$$D" './$(bindir)/' ; \
 	    done ; \
 	 ) || exit ; \
@@ -1696,7 +1702,7 @@ install-win-bundle-thirdparty: @dotMAKE@
 	    GREP='$(GREP)' EGREP='$(EGREP)' \
 	    '$(abs_top_srcdir)/scripts/Windows/dllldd.sh' dllldddir . \
 	    | while read D ; do \
-	        echo "   DLL->sbin      $$D (symlink from bindir)" 2>&1 ; \
+	        echo "   DLL->sbin	LINK	$$D (symlink from bindir)" 2>&1 ; \
 	        ln -f '$(DESTDIR)/$(bindir)'/"`basename \"$$D\"`" ./ ; \
 	    done ; \
 	 ) || exit ; \
@@ -1706,7 +1712,7 @@ install-win-bundle-thirdparty: @dotMAKE@
 	    GREP='$(GREP)' EGREP='$(EGREP)' \
 	    '$(abs_top_srcdir)/scripts/Windows/dllldd.sh' dllldddir . \
 	    | while read D ; do \
-	        echo "   DLL->drv       $$D (symlink from bindir)" 2>&1 ; \
+	        echo "   DLL->drv	LINK	$$D (symlink from bindir)" 2>&1 ; \
 	        ln -f '$(DESTDIR)/$(bindir)'/"`basename \"$$D\"`" ./ ; \
 	    done ; \
 	 ) || exit ; \
@@ -1718,7 +1724,7 @@ install-win-bundle-thirdparty: @dotMAKE@
 	    GREP='$(GREP)' EGREP='$(EGREP)' \
 	    '$(abs_top_srcdir)/scripts/Windows/dllldd.sh' dllldddir . \
 	    | while read D ; do \
-	        echo "   DLL->cgi       $$D (symlink from bindir)" 2>&1 ; \
+	        echo "   DLL->cgi	LINK	$$D (symlink from bindir)" 2>&1 ; \
 	        ln -f '$(DESTDIR)/$(bindir)'/"`basename \"$$D\"`" ./ ; \
 	    done ; \
 	 ) || exit ; \
@@ -1730,7 +1736,7 @@ install-win-bundle-thirdparty: @dotMAKE@
 	    GREP='$(GREP)' EGREP='$(EGREP)' \
 	    '$(abs_top_srcdir)/scripts/Windows/dllldd.sh' dllldddir . \
 	    | while read D ; do \
-	        echo "   DLL->libexec   $$D (symlink from bindir)" 2>&1 ; \
+	        echo "   DLL->libexec	LINK	$$D (symlink from bindir)" 2>&1 ; \
 	        ln -f '$(DESTDIR)/$(bindir)'/"`basename \"$$D\"`" ./ ; \
 	    done ; \
 	 ) || exit
@@ -1776,10 +1782,27 @@ git-realclean-check:
 # separately from the probably slower/louder stages for test programs like
 # check-NIT:
 CHECK_FILES_QUICK_TARGETS = check-man
+
 if WITH_SPELLCHECK
 CHECK_FILES_QUICK_TARGETS += spellcheck-quick
 endif WITH_SPELLCHECK
+
+if HAVE_PERL
+CHECK_FILES_QUICK_TARGETS += check-source-nonascii
+endif HAVE_PERL
+
 check-files-quick: $(CHECK_FILES_QUICK_TARGETS)
+
+# Style check of sorts, except that some older systems may refuse to handle
+# source files with wide/multi-byte characters (have yet to see complaints
+# about single-byte non-ASCII). So far not listing C++ here as its tools are
+# more modern (we mostly care about C++11 and newer).
+check-source-nonascii:
+	@echo "  CHECK-SOURCE-NONASCII	**/*.c **/*.h"
+	@ @PERL@ $(top_srcdir)/tools/check-source-nonascii.pl $(top_srcdir)/*/*.c $(top_srcdir)/*/*.h $(top_srcdir)/*/*/*.c $(top_srcdir)/*/*/*.h
+
+# TBD: clang-format, etc?
+stylecheck: check-source-nonascii
 
 # Autotools hook: run the quick checks before recursing for defaults:
 check-recursive: check-files-quick
