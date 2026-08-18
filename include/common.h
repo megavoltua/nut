@@ -287,6 +287,10 @@ void open_syslog(const char *progname);
 /* close ttys and become a daemon */
 void background(void);
 
+/* Support functions for backgrounding */
+int background_fork(void);
+void background_child(void);
+
 /* allow tagging the (forked) process in logs to ease debugging */
 const char *getproctag(void);
 /* save a copy of tag, or call with NULL to clean and free the internal buffer;
@@ -423,6 +427,9 @@ int	str_add_unique_token(
 
 /* Report maximum platform value for the pid_t */
 pid_t get_max_pid_t(void);
+
+/* Check filesystem permissions for files/dirs we deem secretive */
+void check_perms(const char *fn);
 
 /* send sig to pid after some sanity checks, returns
  * -1 for error, or zero for a successfully sent signal */
@@ -616,6 +623,7 @@ void s_upsdebugx(int level, const char *fmt, ...)
 	__attribute__ ((__format__ (__printf__, 2, 3)));
 void s_upsdebug_hex(int level, const char *msg, const void *buf, size_t len);
 void s_upsdebug_ascii(int level, const char *msg, const void *buf, size_t len);
+void s_upsdebug_ascii_compact(int level, const char *msg, const void *buf, size_t len);
 /* These macros should help avoid run-time overheads
  * passing data for messages nobody would ever see.
  *
@@ -638,6 +646,8 @@ void s_upsdebug_ascii(int level, const char *msg, const void *buf, size_t len);
 	do { if (nut_debug_level >= (level)) { s_upsdebug_hex((level), msg, buf, len); } } while(0)
 #define upsdebug_ascii(level, msg, buf, len) \
 	do { if (nut_debug_level >= (level)) { s_upsdebug_ascii((level), msg, buf, len); } } while(0)
+#define upsdebug_ascii_compact(level, msg, buf, len) \
+	do { if (nut_debug_level >= (level)) { s_upsdebug_ascii_compact((level), msg, buf, len); } } while(0)
 
 void fatal_with_errno(int status, const char *fmt, ...)
 	__attribute__ ((__format__ (__printf__, 2, 3))) __attribute__((noreturn));

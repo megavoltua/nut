@@ -454,7 +454,7 @@ void syslog(int priority, const char *fmt, ...)
 	/* At least while this is not configurable, can be static to speed up;
 	 * see https://github.com/networkupstools/nut/issues/3375
 	 */
-	static char	pipe_full_name[] = "\\\\.\\pipe\\"EVENTLOG_PIPE_NAME;
+	static char	pipe_full_name[] = "\\\\.\\pipe\\"EVENTLOG_PIPE_NAME, reported_no_pipe = 0, reentered = 0;
 	char	buf1[LARGEBUF + sizeof(DWORD)];
 	char	buf2[LARGEBUF];
 	va_list	ap;
@@ -464,6 +464,13 @@ void syslog(int priority, const char *fmt, ...)
 	if (EventLogName == NULL) {
 		return;
 	}
+
+	/* Could an upsdebugx() below cause re-syslog?.. */
+	if (reentered) {
+		return;
+	}
+
+	reentered = 1;
 
 	/* Format message */
 	va_start(ap, fmt);
@@ -490,12 +497,19 @@ void syslog(int priority, const char *fmt, ...)
 		NULL);			/* no template file */
 
 	if (pipe == INVALID_HANDLE_VALUE) {
-		upsdebug_with_errno(1,
+		upsdebug_with_errno(reported_no_pipe ? 7 : 1,
 			"%s: SKIP: can't open existing event log NAMED_PIPE: '%s'",
 			__func__, pipe_full_name);
 
+		reported_no_pipe = 1;
+		reentered = 0;
 		return;
 	}
+
+	if (reported_no_pipe)
+		upsdebugx(1, "%s: opened existing event log NAMED_PIPE which we failed to use earlier: '%s'",
+			__func__, pipe_full_name);
+	reported_no_pipe = 0;
 
 	WriteFile(pipe, buf1, strlen(buf2) + sizeof(DWORD), &bytesWritten, NULL);
 
@@ -504,6 +518,8 @@ void syslog(int priority, const char *fmt, ...)
 	 * loop */
 	upsdebugx(6, "%s: closing event log NAMED_PIPE", __func__);
 	CloseHandle(pipe);
+
+	reentered = 0;
 }
 
 /* Signal emulation via NamedPipe */
@@ -515,10 +531,27 @@ static const char	*named_pipe_name=NULL;
 OVERLAPPED		pipe_connection_overlapped;
 pipe_conn_t		*pipe_connhead = NULL;
 
+void init_pipe_security(SECURITY_ATTRIBUTES *sa, SECURITY_DESCRIPTOR *sd)
+{
+	if (!InitializeSecurityDescriptor(sd, SECURITY_DESCRIPTOR_REVISION)) {
+		fatal_with_errno(EXIT_FAILURE, "InitializeSecurityDescriptor failed");
+	}
+
+	if (!SetSecurityDescriptorDacl(sd, TRUE, NULL, FALSE)) {
+		fatal_with_errno(EXIT_FAILURE, "SetSecurityDescriptorDacl failed");
+	}
+
+	sa->nLength = sizeof(*sa);
+	sa->lpSecurityDescriptor = sd;
+	sa->bInheritHandle = FALSE;
+}
+
 void pipe_create(const char * pipe_name)
 {
 	BOOL	ret;
 	char	pipe_full_name[NUT_PATH_MAX + 1];
+	SECURITY_ATTRIBUTES	pipe_sa;
+	SECURITY_DESCRIPTOR	pipe_sd;
 
 	/* save pipe name for further use in pipe_connect */
 	if (pipe_name == NULL) {
@@ -537,6 +570,8 @@ void pipe_create(const char * pipe_name)
 		CloseHandle(pipe_connection_overlapped.hEvent);
 	}
 	memset(&pipe_connection_overlapped, 0, sizeof(pipe_connection_overlapped));
+	init_pipe_security(&pipe_sa, &pipe_sd);
+
 	upsdebugx(2, "%s: creating NAMED_PIPE (listener): '%s'", __func__, pipe_full_name);
 	pipe_connection_handle = CreateNamedPipe(
 		pipe_full_name,
@@ -544,12 +579,13 @@ void pipe_create(const char * pipe_name)
 		| FILE_FLAG_OVERLAPPED,	/* async IO */
 		PIPE_TYPE_MESSAGE
 		| PIPE_READMODE_MESSAGE
+		| PIPE_REJECT_REMOTE_CLIENTS	/* local host only */
 		| PIPE_WAIT,
 		PIPE_UNLIMITED_INSTANCES,	/* max. instances */
 		LARGEBUF,		/* output buffer size */
 		LARGEBUF,		/* input buffer size */
 		0,			/* client time-out */
-		NULL);			/* FIXME: default security attribute */
+		&pipe_sa);		/* default security attribute */
 
 	if (pipe_connection_handle == INVALID_HANDLE_VALUE) {
 		upslogx(LOG_ERR, "Error creating named pipe");
@@ -771,7 +807,7 @@ void overlapped_setup(serial_handler_t *sh)
 	memset(&sh->io_status, 0, sizeof(sh->io_status));
 	sh->io_status.hEvent = CreateEvent(
 		NULL,	/* Security */
-		TRUE,	/* auto-reset */
+		TRUE,	/* manual-reset */
 		FALSE,	/* initial state = non signaled */
 		NULL	/* no name */
 	);
@@ -781,7 +817,7 @@ void overlapped_setup(serial_handler_t *sh)
 int w32_serial_read(serial_handler_t *sh, void *ptr, size_t ulen, DWORD timeout)
 {
 	int	tot;
-	DWORD	num;
+	DWORD	error, num;
 	HANDLE	w4;
 	DWORD	minchars = sh->vmin_ ? sh->vmin_ : ulen;
 
@@ -851,17 +887,57 @@ int w32_serial_read(serial_handler_t *sh, void *ptr, size_t ulen, DWORD timeout)
 							"w32_serial_read : characters are available on input buffer");
 						break;
 					case WAIT_TIMEOUT:
+						/*
+						 * CancelIo() only requests cancellation. Wait for the
+						 * pending WaitCommEvent() operation to finish before
+						 * reusing the OVERLAPPED structure or returning.
+						 */
+						if (!CancelIo(sh->handle)) {
+							upsdebugx(3,
+								"w32_serial_read : CancelIo failed with error %lu",
+								(unsigned long)GetLastError());
+						}
+
+						error = ERROR_SUCCESS;
+						if (!GetOverlappedResult(
+								sh->handle, &sh->io_status, &num, TRUE)) {
+							error = GetLastError();
+						}
+
+						sh->overlapped_armed = 0;
+						ResetEvent(sh->io_status.hEvent);
+
+						if (error != ERROR_SUCCESS &&
+								error != ERROR_OPERATION_ABORTED) {
+							upsdebugx(4,
+								"w32_serial_read : overlapped wait completed with "
+								"error %lu",
+								(unsigned long)error);
+							SetLastError(error);
+							errno = EIO;
+							return -1;
+						}
+
 						if (!tot) {
-							CancelIo(sh->handle);
-							sh->overlapped_armed = 0;
-							ResetEvent(sh->io_status.hEvent);
 							upsdebugx(4,
 								"w32_serial_read : timeout %d ms elapsed",
 								(int)timeout);
 							SetLastError(WAIT_TIMEOUT);
-							errno = 0;
+							errno = ETIMEDOUT;
 							return 0;
 						}
+
+						/*
+						 * Follow POSIX-style read() semantics: once data has been
+						 * transferred, report a successful short read.
+						 */
+						upsdebugx(4,
+							"w32_serial_read : timeout after receiving "
+							"%d characters, returning a short read",
+							tot);
+						SetLastError(ERROR_SUCCESS);
+						errno = 0;
+						return tot;
 					default:
 						goto err;
 				}
@@ -926,7 +1002,7 @@ int w32_serial_write(serial_handler_t *sh, const void *ptr, size_t len)
 	memset(&write_status, 0, sizeof(write_status));
 	write_status.hEvent = CreateEvent(
 		NULL,	/* Security */
-		TRUE,	/* auto-reset */
+		TRUE,	/* manual-reset */
 		FALSE,	/* initial state = non signaled */
 		NULL	/* no name */
 	);

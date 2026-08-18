@@ -28,7 +28,7 @@
 
 #include <ctype.h>	/* isdigit() */
 
-#define POWERCOM_HID_VERSION	"PowerCOM HID 0.74"
+#define POWERCOM_HID_VERSION	"PowerCOM HID 0.76"
 /* FIXME: experimental flag to be put in upsdrv_info */
 
 /* PowerCOM */
@@ -449,6 +449,8 @@ static const char *powercom_hack_voltage(double value)
 		max_retries = 5;
 	}
 
+	memset(data, 0, sizeof(data));
+
 	for (retry = 0; retry < max_retries; retry++) {
 		/* Portable read of Report 0xa4 (Feature) using NUT's wrapper */
 		/* 0xA1: Dir=IN, Type=Class, Recp=Interface */
@@ -793,4 +795,5 @@ subdriver_t powercom_subdriver = {
 	powercom_format_mfr,
 	powercom_format_serial,
 	fix_report_desc,
+	NULL,
 };

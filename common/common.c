@@ -43,9 +43,7 @@
 #endif
 
 #include <dirent.h>
-#if !HAVE_DECL_REALPATH
-# include <sys/stat.h>
-#endif
+#include <sys/stat.h>
 
 /* Just yield a unique value - e.g. address of a statically allocated variable
  * which would be different if several copies of NUT-common object code are
@@ -615,6 +613,28 @@ pid_t get_max_pid_t(void)
 #endif
 }
 
+void check_perms(const char *fn)
+{
+#ifndef WIN32
+	int	ret;
+	struct stat	st;
+
+	ret = stat(fn, &st);
+
+	if (ret != 0) {
+		fatal_with_errno(EXIT_FAILURE, "stat %s", fn);
+	}
+
+	/* include the x bit here in case we check a directory */
+	if (st.st_mode & (S_IROTH | S_IXOTH)) {
+		upslogx(LOG_WARNING, "WARNING: %s is world readable (hope you don't have passwords there)", fn);
+	}
+#else   /* WIN32 */
+	NUT_UNUSED_VARIABLE(fn);
+	NUT_WIN32_INCOMPLETE_MAYBE_NOT_APPLICABLE();
+#endif  /* WIN32 */
+}
+
 	/* Normally sendsignalfn(), sendsignalpid() and related methods call
 	 * upslogx() to report issues such as failed fopen() of PID file,
 	 * failed parse of its contents, inability to send a signal (absent
@@ -797,21 +817,46 @@ void open_syslog(const char *progname)
 #endif	/* WIN32 */
 }
 
+int background_fork(void)
+{
+	int	pid = 0;
+
+#ifndef WIN32
+	if ((pid = fork()) < 0)
+		fatal_with_errno(EXIT_FAILURE, "Unable to enter background");
+#endif	/* !WIN32 */
+
+	return pid;
+}
+
 /* close ttys and become a daemon */
 void background(void)
+{
+#ifndef WIN32
+	int	pid;
+
+	pid = background_fork();
+	if (pid != 0) {
+		/* parent */
+		/* these are typically fds 0-2: */
+		close(STDIN_FILENO);
+		close(STDOUT_FILENO);
+		close(STDERR_FILENO);
+		_exit(EXIT_SUCCESS);
+	}
+#else	/* WIN32 */
+	NUT_WIN32_INCOMPLETE_MAYBE_NOT_APPLICABLE();
+#endif	/* WIN32 */
+	background_child();
+}
+
+void background_child(void)
 {
 	/* Normally we enable SYSLOG and disable STDERR,
 	 * unless NUT_DEBUG_SYSLOG envvar interferes as
 	 * interpreted in syslog_is_disabled() method: */
 	int	syslog_disabled = syslog_is_disabled(),
 		stderr_disabled = (syslog_disabled == 0 || syslog_disabled == 2);
-
-#ifndef WIN32
-	int	pid;
-
-	if ((pid = fork()) < 0)
-		fatal_with_errno(EXIT_FAILURE, "Unable to enter background");
-#endif	/* !WIN32 */
 
 	if (!syslog_disabled)
 		/* not disabled: NUT_DEBUG_SYSLOG is unset or invalid */
@@ -821,17 +866,6 @@ void background(void)
 		xbit_clear(&upslog_flags, UPSLOG_STDERR);
 
 #ifndef WIN32
-	if (pid != 0) {
-		/* parent */
-		/* these are typically fds 0-2: */
-		close(STDIN_FILENO);
-		close(STDOUT_FILENO);
-		close(STDERR_FILENO);
-		_exit(EXIT_SUCCESS);
-	}
-
-	/* child */
-
 	/* make fds 0-2 (typically) point somewhere defined */
 # ifdef HAVE_DUP2
 	/* system can close (if needed) and (re-)open a specific FD number */
@@ -4988,7 +5022,9 @@ static const char* ascii_symb[] = {
 	"US"    /*  0x1F    */
 };
 
-/* dump message msg and len bytes from buf to upsdebugx(level) in ascii. */
+/* dump message msg and len bytes from buf to upsdebugx(level) in ascii,
+ * spelling each ASCII character in its own quotes and special characters
+ * by code . */
 void s_upsdebug_ascii(int level, const char *msg, const void *buf, size_t len)
 {
 	char line[256];
@@ -5011,6 +5047,52 @@ void s_upsdebug_ascii(int level, const char *msg, const void *buf, size_t len)
 			n = snprintfcat(line, sizeof(line), "%02Xh ", ch);
 		else
 			n = snprintfcat(line, sizeof(line), "'%c' ", ch);
+
+		if (n < 0) goto failed;
+	}
+
+	s_upsdebugx(level, "%s", line);
+	return;
+
+failed:
+	s_upsdebugx(level, "%s", "Failed to print an ASCII data dump for debug");
+}
+
+/* dump message msg and len bytes from buf to upsdebugx(level) in ascii,
+ * spelling a streak of ASCII characters together and special characters
+ * by code in brackets. */
+void s_upsdebug_ascii_compact(int level, const char *msg, const void *buf, size_t len)
+{
+	char line[256];
+	int n;	/* number of characters currently in line */
+	size_t i;	/* number of bytes output from buffer */
+	unsigned char ch, prev_ascii = 0;
+
+	if (nut_debug_level < level)
+		return;	/* save cpu cycles */
+
+	n = snprintf(line, sizeof(line), "%s", msg);
+	if (n < 0) goto failed;
+
+	for (i=0; i<len; ++i) {
+		ch = ((const unsigned char *)buf)[i];
+
+		if (ch < 0x20) {
+			n = snprintfcat(line, sizeof(line), "%s<%s> ",
+				prev_ascii ? "' " : "",
+				ascii_symb[ch]);
+			prev_ascii = 0;
+		} else if (ch >= 0x80) {
+			n = snprintfcat(line, sizeof(line), "%s<0x%02X> ",
+				prev_ascii ? "' " : "",
+				ch);
+			prev_ascii = 0;
+		} else {
+			n = snprintfcat(line, sizeof(line), "%s%c",
+				prev_ascii ? "" : "'",
+				ch);
+			prev_ascii = 1;
+		}
 
 		if (n < 0) goto failed;
 	}

@@ -80,7 +80,7 @@ moment the daemon starts. If your LAN IP address (or host name) used in one
 of the `LISTEN` directives may be not always accessible, and for some reason
 do not want to just `LISTEN *` on the wildcard interface, but e.g. you still
 want to use `upsmon` on `localhost`, this option can help. Note you would
-have to restart `upsd` to pick up the `LISTEN`'ed IP address if it appears
+have to restart `upsd` to pick up the IP address to `LISTEN` on if it appears
 later.
 +
 Boolean values 'true', 'yes', 'on' and '1' mean that the server would not
@@ -255,6 +255,15 @@ is applied instantly and overrides any previously set value, from file
 or CLI options, regardless of older logging level being higher or lower
 than the newly found number; a missing (or commented away) value however
 does not change the previously active logging verbosity.
+
+HARDENING
+---------
+
+Starting with NUT v2.8.6 release, if SSL configuration options are specified
+(`CERTFILE` or `CERTPATH`, possibly `CERTIDENT` as applicable for the SSL
+backend the program was built against), but the configuration was incomplete
+or could not be applied (e.g. missing certificates), the server would refuse
+to start. Earlier releases logged the error and proceeded in insecure fashion.
 
 SEE ALSO
 --------

@@ -1914,9 +1914,9 @@ static void mainloop(void)
 				__func__,
 				(handler[i].type==DRIVER ? "DRIVER" :
 				(handler[i].type==CLIENT ? "CLIENT" :
-				(handler[i].type==SERVER ? "SERVER"  :
+				(handler[i].type==SERVER ? "SERVER" :
 				"<unknown>"))),
-				(handler[i].type==DRIVER ? ((upstype_t *)handler[i].data)->name  :
+				(handler[i].type==DRIVER ? ((upstype_t *)handler[i].data)->name   :
 				(handler[i].type==CLIENT ? ((nut_ctype_t *)handler[i].data)->addr :
 				(handler[i].type==SERVER ? "" :
 				""))),
@@ -1975,19 +1975,20 @@ static void mainloop(void)
 
 		if (fds[i].revents & POLLIN) {
 
-			upsdebugx(3, "%s: Incoming %s from %s [%s%sFD %ld]",
+			upsdebugx(3, "%s: Incoming %s from %s [%s%sFD %ld%s]",
 				__func__,
 				(handler[i].type==SERVER ? "connection" : "data"),
 				(handler[i].type==DRIVER ? "DRIVER" :
 				(handler[i].type==CLIENT ? "CLIENT" :
-				(handler[i].type==SERVER ? "SERVER"  :
+				(handler[i].type==SERVER ? "SERVER" :
 				"<unknown>"))),
-				(handler[i].type==DRIVER ? ((upstype_t *)handler[i].data)->name  :
+				(handler[i].type==DRIVER ? ((upstype_t *)handler[i].data)->name   :
 				(handler[i].type==CLIENT ? ((nut_ctype_t *)handler[i].data)->addr :
 				(handler[i].type==SERVER ? "" :
 				""))),
 				(handler[i].type==DRIVER || handler[i].type==CLIENT ? ", " : ""),
-				(long int)fds[i].fd
+				(long int)fds[i].fd,
+				(handler[i].type==CLIENT ? ( ((nut_ctype_t *)handler[i].data)->ssl_connected ? ", encrypted" : ", plaintext") : "")
 				);
 
 			switch(handler[i].type)
@@ -2489,28 +2490,6 @@ static void setup_signals(void)
 	sigaction(SIGHUP, &sa, NULL);
 #else	/* WIN32 */
 	pipe_create(UPSD_PIPE_NAME);
-#endif	/* WIN32 */
-}
-
-void check_perms(const char *fn)
-{
-#ifndef WIN32
-	int	ret;
-	struct stat	st;
-
-	ret = stat(fn, &st);
-
-	if (ret != 0) {
-		fatal_with_errno(EXIT_FAILURE, "stat %s", fn);
-	}
-
-	/* include the x bit here in case we check a directory */
-	if (st.st_mode & (S_IROTH | S_IXOTH)) {
-		upslogx(LOG_WARNING, "WARNING: %s is world readable (hope you don't have passwords there)", fn);
-	}
-#else	/* WIN32 */
-	NUT_UNUSED_VARIABLE(fn);
-	NUT_WIN32_INCOMPLETE_MAYBE_NOT_APPLICABLE();
 #endif	/* WIN32 */
 }
 

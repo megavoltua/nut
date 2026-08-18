@@ -47,6 +47,7 @@ $(top_builddir)/common/libnutconf.la \
 $(top_builddir)/common/libcommonclient.la \
 $(top_builddir)/common/libcommon.la \
 $(top_builddir)/common/libparseconf.la \
+$(top_builddir)/clients/libupsclient.la \
 $(top_builddir)/clients/libnutclient.la \
 $(top_builddir)/clients/libnutclientstub.la: dummy @dotMAKE@
 	+@cd $(@D) && $(MAKE) $(AM_MAKEFLAGS) $(@F)
@@ -72,6 +73,7 @@ $(top_builddir)/common/libnutprivate-@NUT_SOURCE_GITREV_SEMVER_UNDERSCORES@-comm
 $(top_builddir)/drivers/libdummy_mockdrv.la: $(top_builddir)/common/libcommonversion.la $(top_builddir)/common/libnutprivate-@NUT_SOURCE_GITREV_SEMVER_UNDERSCORES@-common-all.la
 $(top_builddir)/common/libnutconf.la: $(top_builddir)/common/libnutprivate-@NUT_SOURCE_GITREV_SEMVER_UNDERSCORES@-common-client.la
 $(top_builddir)/clients/libnutclient.la: $(top_builddir)/common/libnutprivate-@NUT_SOURCE_GITREV_SEMVER_UNDERSCORES@-common-client.la
+$(top_builddir)/clients/libupsclient.la: $(top_builddir)/common/libnutprivate-@NUT_SOURCE_GITREV_SEMVER_UNDERSCORES@-common-client.la $(top_builddir)/include/nut_version.h
 
 NUT_LIBCOMMON = $(top_builddir)/common/libnutprivate-@NUT_SOURCE_GITREV_SEMVER_UNDERSCORES@-common-all.la
 
@@ -80,6 +82,7 @@ else !ENABLE_SHARED_PRIVATE_LIBS
 $(top_builddir)/drivers/libdummy_mockdrv.la: $(top_builddir)/common/libcommon.la $(top_builddir)/common/libcommonversion.la $(top_builddir)/common/libparseconf.la
 $(top_builddir)/common/libnutconf.la: $(top_builddir)/common/libcommonclient.la
 $(top_builddir)/clients/libnutclient.la: $(top_builddir)/common/libcommonclient.la
+$(top_builddir)/clients/libupsclient.la: $(top_builddir)/common/libcommonclient.la $(top_builddir)/include/nut_version.h
 
 NUT_LIBCOMMON = $(top_builddir)/common/libcommon.la
 
@@ -110,17 +113,38 @@ TESTS += nuttimetest
 nuttimetest_SOURCES = nuttimetest.c
 nuttimetest_LDADD = $(NUT_LIBCOMMON)
 
+TESTS += ecoflow_cdc_protocol_utest
+ecoflow_cdc_protocol_utest_SOURCES = ecoflow_cdc_protocol_utest.c \
+	$(top_srcdir)/drivers/ecoflow-cdc-protocol.h
+nodist_ecoflow_cdc_protocol_utest_SOURCES = ecoflow-cdc-protocol.c
+ecoflow_cdc_protocol_utest_LDADD = -lm
+
 TESTS += nutbooltest
 nutbooltest_SOURCES = nutbooltest.c
 #nutbooltest_LDADD = $(NUT_LIBCOMMON)
 
+TESTS += test_authconf
+test_authconf_SOURCES = test_authconf.c
+test_authconf_LDADD = $(top_builddir)/clients/libupsclient.la $(NUT_LIBCOMMON)
+test_authconf_LDFLAGS = $(AM_LDFLAGS)
+test_authconf_CFLAGS = $(AM_CFLAGS) -I$(top_srcdir)/clients
+if WITH_SSL
+# This is more for libupsclient that may be linked to NSS than for the test itself
+test_authconf_LDADD += $(LIBSSL_LIBS)
+test_authconf_LDFLAGS += $(LIBSSL_LDFLAGS_RPATH)
+test_authconf_CFLAGS += $(LIBSSL_CFLAGS)
+endif WITH_SSL
+
 # Separate the .deps of other dirs from this one
-LINKED_SOURCE_FILES = hidparser.c
+LINKED_SOURCE_FILES = hidparser.c ecoflow-cdc-protocol.c
 
 # NOTE: Not using "$<" due to a legacy Sun/illumos dmake bug with resolver
 # of dynamic vars, see e.g. https://man.omnios.org/man1/make#BUGS
 hidparser.c: $(top_srcdir)/drivers/hidparser.c
 	test -s '$@' || ln -s -f "$(top_srcdir)/drivers/hidparser.c" '$@'
+
+ecoflow-cdc-protocol.c: $(top_srcdir)/drivers/ecoflow-cdc-protocol.c
+	test -s '$@' || ln -s -f "$(top_srcdir)/drivers/ecoflow-cdc-protocol.c" '$@'
 
 if WITH_USB
 TESTS += getvaluetest getexponenttest-belkin-hid

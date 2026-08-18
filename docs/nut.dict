@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3783 utf-8
+personal_ws-1.1 en 3807 utf-8
 AAC
 AAS
 ABI
@@ -287,6 +287,7 @@ DS
 DSA
 DSHUTD
 DSL
+DSM
 DTE
 DTrace
 DUMPALL
@@ -802,6 +803,7 @@ Mozilla
 Msg
 MultiLink
 Multiplug
+Mutexes
 MyCompany
 MyPasSw
 MyState
@@ -898,6 +900,8 @@ OIDs
 OLHVT
 OMNIVS
 OMNIVSINT
+OMRON
+OMRON's
 ONF
 ONV
 OO
@@ -983,11 +987,15 @@ PROGS
 PROTVER
 PRs
 PSA
+PSCERT
 PSD
+PSDR
+PSEMD
 PSF
 PSFn
 PSGPSER
 PSSENTR
+PSSNMPV
 PSUs
 PSW
 PSX
@@ -1025,6 +1033,7 @@ PnP
 Poettering
 Pohle
 PointBre
+Polska
 Pos
 Potrans
 Poush
@@ -1045,6 +1054,7 @@ PowerPC
 PowerPS
 PowerPal
 PowerPanel
+PowerChute
 PowerShare
 PowerShell
 PowerShield
@@ -1057,6 +1067,7 @@ PowerWalker
 PowerWare
 Powerchute
 Powercool
+Powershield
 Powervar
 Powervar's
 Powerwell
@@ -1088,11 +1099,13 @@ QFRE
 QGR
 QGS
 QHE
+QI
 QID
 QLDL
 QMD
 QMF
 QMOD
+QNAP
 QOL
 QP
 QPAR
@@ -1100,6 +1113,7 @@ QPD
 QQ
 QQQ
 QRI
+QTS
 QVFW
 QWS
 QinHeng
@@ -1248,6 +1262,7 @@ SPS
 SRC
 SRVS
 SSD
+SSLBACKEND
 SSLContext
 SSSS
 STARTTLS
@@ -1349,6 +1364,7 @@ Sy
 Sycon
 Symmetra
 Symmetras
+Synology
 SyntaxWarning
 Sysgration
 SyslogIdentifier
@@ -1369,6 +1385,7 @@ TESTCERT
 TESTPASS
 TEoQ
 TGS
+TIMEJUMP
 TIMELEFT
 TIOCM
 TIOCMBIC
@@ -1701,6 +1718,7 @@ authPassword
 authPriv
 authProtocol
 authType
+authconf
 autoboot
 autoconf
 autodetect
@@ -2109,6 +2127,7 @@ ePDUs
 eaton
 ec
 eco
+ecoflow
 ecomode
 edb
 editorconfig
@@ -2210,6 +2229,7 @@ formatconfig
 formatstring
 fosshost
 fp
+fprintf
 freebsd
 freedesktop
 freeipmi
@@ -2859,6 +2879,7 @@ numa
 numbatteries
 numlogins
 numq
+nutauth
 nutclient
 nutclientmem
 nutconf
@@ -2886,6 +2907,7 @@ oldmac
 oldmge
 oldnut
 omnios
+omron
 onbatt
 onbattery
 onbattwarn
@@ -3191,6 +3213,7 @@ schuko
 scm
 screenshot
 screenshots
+scriptlet
 scriptname
 sd
 sdcmd
@@ -3313,6 +3336,7 @@ spectype
 spellcheck
 spellchecked
 splitaddr
+splitauth
 splitname
 sprintf
 squasher

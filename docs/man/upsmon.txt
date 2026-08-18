@@ -237,12 +237,20 @@ UPS has at least one unclassified status token.
 *NOTOTHER*::
 UPS has no unclassified status tokens anymore.
 
+*SUSPEND_TIMEJUMP_UNEXPECTED*::
+Unexpected clock change by `delta`, treating as wake up from sleep.
+
 *SUSPEND_STARTING*::
 OS is entering sleep/suspend/hibernate mode.
 
 *SUSPEND_FINISHED*::
 OS just finished sleep/suspend/hibernate mode, de-activating
 obsolete UPS readings to avoid an unfortunate shutdown.
++
+NOTE: In practice, `SUSPEND_FINISHED` may happen on very busy systems
+with a momentarily high Load Average, where they could not dedicate
+clock cycles to linkman:upsmon[8] for a few seconds too many.
+These cases are however equivalent for anti-FSD mitigation.
 
 
 NOTIFY COMMAND
@@ -258,7 +266,12 @@ Example:
  - `NOTIFYCMD "/usr/local/bin/notifyme"`
 
 Remember to wrap the path in "double quotes" if it contains any spaces.
-It should probably not rely on receiving any command-line arguments.
+It should not rely on receiving any command-line arguments: the value of
+this directive is interpreted as a complete path to an externally stored
+executable script (e.g. not an inline scriptlet) or program file without
+further arguments (this is a change from NUT v2.8.5 and older releases).
+If you need to pass special arguments to a notification program, please
+write a small script to do so and specify its path here.
 
 The program you run as your NOTIFYCMD can use the environment variables
 NOTIFYTYPE and UPSNAME to know what has happened and on which UPS.  It
@@ -272,9 +285,13 @@ NOTIFY FLAGS
 ------------
 
 By default, all notify events (see above) generate a global message
-(wall) to all users, plus they are logged via the syslog.
-Except for Windows where upsmon only writes to the syslog by default.
-You can change this with the NOTIFYFLAG directive in the configuration file:
+(linkmanext:wall[1]) to all users, plus they are logged via the syslog.
+Except for Windows where upsmon only writes to the Event Log (as SYSLOG)
+by default.
+
+You can change this with the NOTIFYFLAG directive in the configuration file,
+e.g. to enable EXEC on messages you want to receive also by e-mail via your
+NOTIFYCMD script.
 
 The syntax is: +NOTIFYFLAG+ 'notifytype' 'flags'
 
@@ -320,6 +337,10 @@ Examples:
 The first instance of `%s` is replaced with the identifier of the UPS that
 generated the event.  These messages are used when sending walls to the
 users directly from upsmon, and are also passed to the NOTIFYCMD.
+
+NOTE: You do not *have* to do this to enable certain messaging targets,
+see NOTIFYFLAG for that. Be sure to keep the exact amount, type and order
+of `percent-letter` tokens in these strings.
 
 NOTE: Certain notifications, such as `NOTIFY_ALARM` and `NOTIFY_OTHER`,
 can accept a second instance of `%s` that would be replaced with the

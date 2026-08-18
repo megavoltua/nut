@@ -66,23 +66,6 @@
 	double			previous_battery_charge_value = -1.0;
 	st_tree_timespec_t	previous_battery_charge_timestamp;
 
-#ifdef WIN32
-static void init_pipe_security(SECURITY_ATTRIBUTES *sa, SECURITY_DESCRIPTOR *sd)
-{
-	if (!InitializeSecurityDescriptor(sd, SECURITY_DESCRIPTOR_REVISION)) {
-		fatal_with_errno(EXIT_FAILURE, "InitializeSecurityDescriptor failed");
-	}
-
-	if (!SetSecurityDescriptorDacl(sd, TRUE, NULL, FALSE)) {
-		fatal_with_errno(EXIT_FAILURE, "SetSecurityDescriptorDacl failed");
-	}
-
-	sa->nLength = sizeof(*sa);
-	sa->lpSecurityDescriptor = sd;
-	sa->bInheritHandle = FALSE;
-}
-#endif	/* WIN32 */
-
 #ifndef WIN32
 /* this may be a frequent stumbling point for new users, so be verbose here */
 static void sock_fail(const char *fn)
@@ -223,6 +206,7 @@ static TYPE_FD sock_open(const char *fn)
 		| FILE_FLAG_OVERLAPPED,	/* async IO */
 		PIPE_TYPE_BYTE
 		| PIPE_READMODE_BYTE
+		| PIPE_REJECT_REMOTE_CLIENTS	/* local host only */
 		| PIPE_WAIT,
 		PIPE_UNLIMITED_INSTANCES,	/* max. instances */
 		ST_SOCK_BUF_LEN,	/* output buffer size */
@@ -413,7 +397,7 @@ static void send_to_all(const char *fmt, ...)
 				"handle %p failed (ret=%" PRIiSIZE "), disconnecting.",
 				__func__, buflen, conn->fd, ret);
 #endif	/* WIN32 */
-			upsdebugx(6, "%s: failed write: %s", __func__, buf);
+			upsdebug_ascii_compact(6, "send_to_all: failed to write buffer content: ", buf, buflen);
 
 			conn->closing = 1;
 
@@ -432,8 +416,9 @@ static void send_to_all(const char *fmt, ...)
 				(do_synchronous==1)?"yes":((do_synchronous==0)?"no":"auto"));
 		} else {
 			upsdebugx(6, "%s: write %" PRIuSIZE " bytes to socket %d succeeded "
-				"(ret=%" PRIiSIZE "): %s",
-				__func__, buflen, conn->fd, ret, buf);
+				"(ret=%" PRIiSIZE "):",
+				__func__, buflen, conn->fd, ret);
+			upsdebug_ascii_compact(6, "send_to_all: buffer content: ", buf, buflen);
 		}
 	}
 
@@ -515,8 +500,9 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 		upsdebugx(5, "%s: %.*s", __func__, (int)(ret-1), buf);
 
 /*
-	upsdebugx(0, "%s: writing %" PRIiSIZE " bytes to socket %d: %s",
-		__func__, buflen, conn->fd, buf);
+	upsdebugx(0, "%s: writing %" PRIiSIZE " bytes to socket %d:",
+		__func__, buflen, conn->fd);
+	upsdebug_ascii_compact(0, "send_to_one buffer: content: ", buf, buflen);
 */
 
 #ifndef WIN32
@@ -535,13 +521,14 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 		/* Hacky bugfix: throttle down for upsd to read that */
 #ifndef WIN32
 		upsdebug_with_errno(1, "%s: had to throttle down to retry "
-			"writing %" PRIuSIZE " bytes to socket %d (ret=%" PRIiSIZE ") : %s",
-			__func__, buflen, (int)conn->fd, ret, buf);
+			"writing %" PRIuSIZE " bytes to socket %d (ret=%" PRIiSIZE "):",
+			__func__, buflen, (int)conn->fd, ret);
 #else	/* WIN32 */
 		upsdebug_with_errno(1, "%s: had to throttle down to retry "
-			"writing %" PRIuSIZE " bytes to handle %p (ret=%" PRIiSIZE ") : %s",
-			__func__, buflen, conn->fd, ret, buf);
+			"writing %" PRIuSIZE " bytes to handle %p (ret=%" PRIiSIZE "):",
+			__func__, buflen, conn->fd, ret);
 #endif	/* WIN32 */
+		upsdebug_ascii_compact(1, "send_to_one: buffer content: ", buf, buflen);
 
 		usleep(200);
 
@@ -571,7 +558,8 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 			"handle %p failed (ret=%" PRIiSIZE "), disconnecting",
 			__func__, buflen, conn->fd, ret);
 #endif	/* WIN32 */
-		upsdebugx(6, "%s: failed write: %s", __func__, buf);
+		upsdebug_ascii_compact(6, "send_to_one: failed to write buffer content: ", buf, buflen);
+
 		sock_disconnect(conn);
 		conn = NULL;
 
@@ -594,13 +582,14 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 	} else {
 #ifndef WIN32
 		upsdebugx(6, "%s: write %" PRIuSIZE " bytes to socket %d succeeded "
-			"(ret=%" PRIiSIZE "): %s",
-			__func__, buflen, conn->fd, ret, buf);
+			"(ret=%" PRIiSIZE "):",
+			__func__, buflen, conn->fd, ret);
 #else	/* WIN32 */
 		upsdebugx(6, "%s: write %" PRIuSIZE " bytes to handle %p succeeded "
-			"(ret=%" PRIiSIZE "): %s",
-			__func__, buflen, conn->fd, ret, buf);
+			"(ret=%" PRIiSIZE "):",
+			__func__, buflen, conn->fd, ret);
 #endif	/* WIN32 */
+		upsdebug_ascii_compact(6, "send_to_one: buffer content: ", buf, buflen);
 	}
 
 	return 1;	/* OK */
@@ -681,6 +670,7 @@ static void sock_connect(TYPE_FD sock)
 		| FILE_FLAG_OVERLAPPED,	/* async IO */
 		PIPE_TYPE_BYTE
 		| PIPE_READMODE_BYTE
+		| PIPE_REJECT_REMOTE_CLIENTS	/* local host only */
 		| PIPE_WAIT,
 		PIPE_UNLIMITED_INSTANCES,	/* max. instances */
 		ST_SOCK_BUF_LEN,	/* output buffer size */
@@ -1409,7 +1399,7 @@ static int sock_read(conn_t *conn)
 
 	/* Special case for signals */
 	if (!strncmp(conn->buf, COMMAND_STOP, sizeof(COMMAND_STOP))) {
-		set_exit_flag(1);
+		set_exit_flag(EF_EXIT_SUCCESS);
 		return 1;
 	}
 #endif	/* WIN32 */

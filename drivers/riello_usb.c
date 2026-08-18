@@ -9,7 +9,7 @@
  * Copyright (C) 2012 - Elio Parisi <e.parisi@riello-ups.com>
  * Copyright (C) 2016   Eaton
  * Copyright (C) 2022-2024 "amikot"
- * Copyright (C) 2022-2025 Jim Klimov <jimklimov+nut@gmail.com>
+ * Copyright (C) 2022-2026 Jim Klimov <jimklimov+nut@gmail.com>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,7 +36,7 @@
 #include "riello.h"
 
 #define DRIVER_NAME	"Riello USB driver"
-#define DRIVER_VERSION	"0.17"
+#define DRIVER_VERSION	"0.19"
 
 #define DEFAULT_OFFDELAY   5  /*!< seconds (max 0xFF) */
 #define DEFAULT_BOOTDELAY  5  /*!< seconds (max 0xFF) */
@@ -129,6 +129,8 @@ static int Send_USB_Packet(uint8_t *send_str, uint16_t numbytes)
 
 	size = 7;
 
+	memset(USB_buff_pom, 0, sizeof(USB_buff_pom));
+
 	/* routine which parse report into 4-bytes packet */
 	for (i=0; i<(numbytes/size); i++) {
 		USB_buff_pom[0] = 0x37;
@@ -190,6 +192,8 @@ static int Get_USB_Packet(uint8_t *buffer)
 
 	/* note: this function stop until some byte(s) is not arrived */
 	size = 8;
+
+	memset(inBuf, 0, sizeof(inBuf));
 
 	/* Note: depending on libusb API version, size is either int or uint16_t
 	 * either way, likely less than size_t limit. But we don't assign much.
@@ -359,7 +363,7 @@ static int riello_command(uint8_t *cmd, uint8_t *buf, uint16_t length, uint16_t 
 	int ret;
 
 	if (udev == NULL) {
-		dstate_setinfo("driver.state", "reconnect.trying");
+		reconnect_trying(RECONNECT_TRYING);
 
 		ret = usb->open_dev(&udev, &usbdevice, reopen_matcher, &driver_callback);
 
@@ -367,9 +371,9 @@ static int riello_command(uint8_t *cmd, uint8_t *buf, uint16_t length, uint16_t 
 		if (ret < 0)
 			return ret;
 
-		dstate_setinfo("driver.state", "reconnect.updateinfo");
+		reconnect_trying(RECONNECT_UPDATEINFO);
 		upsdrv_initinfo();	/* reconnect usb cable */
-		dstate_setinfo("driver.state", "quiet");
+		reconnect_trying(RECONNECT_SUCCESS);
 	}
 
 	ret = (*subdriver_command)(cmd, buf, length, buflen);
@@ -419,6 +423,8 @@ static int riello_command(uint8_t *cmd, uint8_t *buf, uint16_t length, uint16_t 
 	case LIBUSB_ERROR_NOT_FOUND:		/* No such file or directory */
 	fallthrough_case_reconnect:
 		/* Uh oh, got to reconnect! */
+		/* Not accounting just yet with reconnect_trying(RECONNECT_TRYING),
+		 * to avoid off-by-one counter errors */
 		dstate_setinfo("driver.state", "reconnect.trying");
 		usb->close_dev(udev);
 		udev = NULL;
@@ -596,7 +602,7 @@ static int get_ups_extended(void)
 	/* optional */
 	if (!wait_packet && foundnak) {
 		upsdebugx (3, "Get extended Ko: command not supported");
-		return 0;
+		return -1;
 	}
 
 	upsdebugx (3, "Get extended Ok: read byte: %d", recv);
