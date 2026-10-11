@@ -24,7 +24,12 @@
 #include "config.h"	/* must be first */
 
 #include <stdio.h>
-#include <stdarg.h>
+#ifdef HAVE_STDARG_H
+# include <stdarg.h>
+#endif
+#ifdef HAVE_SYS_STDARG_H
+# include <sys/stdarg.h>
+#endif
 #include <sys/stat.h>
 #include <sys/types.h>
 #ifndef WIN32
@@ -296,8 +301,9 @@ int state_setinfo(st_tree_t **nptr, const char *var, const char *val)
 		/* refresh even if "skip-writing" same info value */
 		st_tree_node_refresh_timestamp(node);
 
-		/* updating an existing entry */
-		if (!strcasecmp(node->raw, val)) {
+		/* updating an existing entry?
+		 * compare literal values; only variable names ignore case. */
+		if (!strcmp(node->raw, val)) {
 			return 0;	/* no change */
 		}
 

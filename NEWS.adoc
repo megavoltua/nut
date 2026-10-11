@@ -42,12 +42,42 @@ https://github.com/networkupstools/nut/milestone/13
    to patterns defined in link:docs/nut-names.txt[]
 
  - Fix fallout of development in NUT v2.8.0 through v2.8.5:
+    * Now `upssched -l` preserves timer expiry timestamps beyond January 2038
+      on systems with 64-bit `time_t` and 32-bit `long`. [issue #3096, PR #3669]
+    * PyNUT: `GetUPSCommands()` now requests command descriptions with the
+      advertised identifiers on Python 3 and uses those identifiers when
+      extracting the response. Returned keys and descriptions remain byte
+      sequences. [issue #3621]
     * `nut-scanner` tool updates:
       - Mutexes used in parallelized scans were not properly released on
         failure code paths (impacts likely all 2.8.x until now). [PR #3551]
+      - Third-party libraries which `nut-scanner` loads dynamically (libusb,
+        Net-SNMP, neon, Avahi, GLib/GIO, FreeIPMI) are now looked up by the
+        `SONAME` recorded in the shared object seen at build time (such as
+        `libusb-1.0.so.0`) before the fully versioned file name seen then
+        (such as `libusb-1.0.so.0.6.0`). Previously an ABI-compatible update
+        of such a library by the OS distribution, which renamed the file but
+        kept the `SONAME`, silently disabled that scan type until the NUT
+        package was rebuilt. [issue #3474]
+      - `nut-scanner` now really tries each name it knows for a library
+        that it loads dynamically. A failed `lt_dlopen()` attempt was
+        remembered in the module handle, so `nutscan_load_*_library()`
+        answered from that memory and every name after the first one was
+        skipped (impacts all NUT 2.8.x until now). This was only visible
+        where such a library was not found by its file name and could be
+        resolved by the run-time linker alone. [PR #3654]
+      - When the NUT client library was not found under its known file names
+        and had to be loaded by the libtool default search instead, the
+        result was stored as the availability of the XML/HTTP scan. So the
+        `-M` scan could be disabled despite a working `libneon`, or offered
+        without one (impacts NUT v2.8.3 through v2.8.5). [PR #3657]
     * USB drivers: fixed an out-of-bounds read of the candidate HID report
       descriptor lengths, which could cause a segmentation fault (regression
       added in NUT v2.8.5 release). [PR #3550]
+    * Refactoring of `configure.ac` for NUT v2.8.5 release led to a problem
+      when explicitly specifying same `--with-user` *OR* `--with-group` name
+      as would be default for current platform (so one was treated as not-set
+      and failed a sanity check). [issue #3513]
 
  - USB drivers now prefer the longer of conflicting HID report descriptor
    lengths for EcoFlow devices using USB ID `3746:ffff`. This makes the
@@ -62,9 +92,122 @@ https://github.com/networkupstools/nut/milestone/13
  - Second-level bullet points listed in this file will now use 4 spaces
    (not 3 like before) for easier initial indentation of new entries.
 
- - Introduced an experimental `apcmicrolink` driver for devices with
-   the APC Microlink protocol on serial port connections. Tested against
-   APC Smart-UPS 750 (SMT750RMI2UC). [PR #3406]
+ - Introduced and intensively evolved an experimental `apcmicrolink` driver
+   for devices with the APC Microlink protocol on serial port connections.
+    * Initial version, tested against APC Smart-UPS 750 (SMT750RMI2UC). [PR #3406]
+    * Added USB HID support (`port = auto`, matching the usual NUT
+      USB-driver convention), tunneling the Microlink protocol over
+      USB HID for models with no serial port. Tested against APC
+      Smart-UPS 500 (SCL500RMI1UC) by a single tester; considered
+      experimental even relative to the rest of this already-experimental
+      driver. See linkman:apcmicrolink[8] for USB-mode caveats, including
+      a udev rule needed to keep the kernel's `usbhid` driver from
+      claiming the device. [PR #3579]
+    * USB mode: if the Microlink tunnel does not respond during startup,
+      the driver now starts up on standard-HID-PDC fallback data
+      (`ups.status`/`battery.charge`/`battery.runtime`) instead of
+      refusing to start; outlet-group data and instant commands become
+      available automatically once the tunnel connects, with no driver
+      restart needed. [PR #3579]
+    * Added `load.cycle` and per-outlet-group instant commands
+      (`outlet.group.N.load.*`, `outlet.group.N.shutdown.*`), and the
+      `outlet.group.N.switchable` variable to distinguish switchable
+      groups from an unswitched main bank. [PR #3579]
+    * USB mode: reworked the interrupt-IN read path to use a permanently
+      outstanding asynchronous transfer serviced by a dedicated thread, so
+      device replies are no longer missed while the driver is between
+      polls. Several long-run stability fixes go with it: a USB bus reset
+      is now triggered only on a genuine disconnect rather than on a retry
+      count, the cached page 0 contents are no longer wiped on every
+      session (re)start, the read queue is no longer flushed on every
+      session retry, and the authentication challenge is randomized.
+      Also warns once when built against the untested libusb-0.1 backend,
+      and backs off instead of spinning when the kernel's `usbhid` driver
+      has reclaimed the interface. [PR #3579]
+    * Mapped two further descriptor usages:
+      `experimental.battery.serial` (the battery pack's own serial number,
+      distinct from `ups.serial`) and `microlink.diag.slave_password_echo`
+      (auth troubleshooting visibility only, not proof that
+      authentication was accepted). [PR #3579]
+    * A page 0 whose announced frame width disagrees with the width of
+      the frame that carried it is now rejected instead of cached. Such
+      a page redefined the length the frame parser demanded, after which
+      nothing checksum-validated again and the session could not
+      recover. Affects both transports. [issue #3587]
+    * Further updates, the driver remains experimental, but USB sessions
+      should hold up better, and fall back more readily to standard HID PDC
+      data when the Microlink tunnel is unstable or unavailable. [PR #3591]
+      * USB mode: the standard-HID-PDC fallback now engages whenever the
+        Microlink tunnel stops producing usable data, not only when it
+        fails to answer during startup. A device that answers every poll
+        while reporting an all-zero state previously left `ups.status`
+        empty indefinitely. The driver hands back to Microlink data once
+        that source looks plausible again, with hysteresis so the two do
+        not swap on alternate polls.
+      * The Microlink tunnel is now polled for a full page pass per update
+        cycle, instead of one record per `pollinterval`. The device does
+        not acknowledge its authentication handshake until roughly 20
+        exchanges after the response is sent, and serves no measurement
+        page until it does, so the slower cadence could leave every
+        measured value reading 0 on a device that was answering normally.
+        Publishes `experimental.microlink.diag.auth_status` and
+        `experimental.microlink.diag.auth_refused`, and warns when the
+        handshake goes unacknowledged.
+      * The driver now closes the Microlink session with a STOP when it
+        exits. Without it the device could answer a later client's session
+        request mid-walk rather than at page 0, and would not re-synchronize
+        until re-enumerated.
+      * `2:4.7.28` and `2:4.7.49` are percentages of the nominal ratings
+        rather than absolute readings. `ups.load` is now published from the
+        former, with `ups.realpower` and `ups.power` derived against the
+        nominal ratings, instead of both reading two orders of magnitude
+        low. `ups.test.result` now comes from the battery-scope usage that
+        a self test actually updates, and `ups.test.interval` is derived
+        from the self-test schedule enumeration.
+      * Newly mapped: `input.sensitivity`, `ups.beeper.status`,
+        `experimental.battery.firmware` and
+        `experimental.statistics.battery.transfers`.
+      * Driver-specific diagnostic variables moved from `microlink.*` to
+        `experimental.microlink.*`.
+      * Documented the Microlink descriptor format that the driver parses,
+        for anyone extending its variable maps. See the NUT Developer
+        Guide.
+      * `outlet.group.count` and the per-outlet-group commands/variables no
+        longer require an unswitched "main" outlet group to be present;
+        devices with only switched groups now expose them correctly.
+        [issue #3587]
+       * `ups.beeper.status` is decoded as a bitmask instead of matching
+         exact enum values, so devices that set additional unrelated bits
+         alongside the enabled/disabled bit report the correct status
+        instead of a raw number. [issue #3587]
+      * `beeper.mute` is replaced by `beeper.enable`/`beeper.disable`: the
+        register it wrote had no confirmed effect, and the actual beeper
+        on/off control used by PowerChute is a persistent setting on the
+        same usage `ups.beeper.status` reads, not a temporary mute/re-arm
+        action.
+    * Further contributed `apcmicrolink` driver fixes for issues reported
+      from a Smart-UPS X 1500 (SMX1500RM2UC, firmware "UPS 16.0") on the
+      USB transport [issue #3587, PR #3714]:
+      * The calibration result register (descriptor `2:13`) no longer
+        leaks its labels into `ups.status`: a unit whose last runtime
+        calibration had ended "Failed" reported `OL Failed` permanently.
+        Only a calibration in progress is published there now, as `CAL`.
+      * USB mode: the zero padding that follows each Microlink record in
+        a fixed-size HID Input report is no longer fed to the byte-stream
+        frame scanner. Leading zeros are invisible to the Microlink
+        checksum, so a record ending in `0xFF` also validated one byte
+        early, was taken for a (rejected) page 0, and was lost for that
+        poll pass; on the test unit this happened two to three times a
+        minute.
+    * USB mode: the standard-HID fallback no longer publishes a status it
+      never read. Its snapshot counted as fresh as soon as any fallback
+      report arrived (battery charge or runtime alone), while the "AC
+      present" flag still held its initial zero, so a driver starting on
+      fallback data could publish `OB` for a UPS on line power; when that
+      data then went stale, `upsmon` forced a shutdown. A status is now
+      published only after both status flags were decoded from a recent
+      report. Also corrected the startup failure message shown when
+      `hid_fallback = no`. [issue #3587, PR #3728]
 
  - `apc_modbus` driver updates:
     * Fixed string join not doing zero termination. [PR #3413]
@@ -81,16 +224,84 @@ https://github.com/networkupstools/nut/milestone/13
       failure causes than just a timeout; quieter retry logging to avoid
       severe syslog/journal thrashing. [PR #3571, #3414]
 
+ - `bestups` driver updates:
+    * Fixed Megatec Q1 parser to expect specific response format and avoid
+      blind `scanf()` usage. [#GHSA-hwqr-5pjj-3m25]
+
+ - `blazer_usb` driver updates:
+    * Bounded USB reply parsing by the number of bytes actually received, in
+      the `ippon`, `cypress` and `phoenix` transports, preventing out-of-bounds
+      reads when a reply fills the buffer without containing the expected
+      carriage return or a zero byte. The same defects were fixed in the
+      corresponding `nutdrv_qx` transports, which this code predates.
+
  - `dummy-ups` driver updates:
+    * Repeater mode now marks data stale after a failed refresh, including
+      an interrupted variable list, and restores freshness after a complete
+      response. Runtime reconnection attempts continue as before. [PR #3648]
     * Added `authconf` driver parameter for repeater mode to control
       authentication configuration discovery. It accepts `default`, `none`,
       or a specific authconf file path. [issue #3329]
+
+ - `huawei-ups2000` driver updates:
+    * Fixed a Modbus compatibility problem that made changing any variables
+      or sending any instant commands impossible with some UPS models. This
+      was caused by the use of `modbus_write_registers()` (Modbus command
+      `0x10`), which is not officially supported, making any register write
+      impossible on some models. All uses of `modbus_write_registers()` have
+      been changed to `modbus_write_register()` (Modbus command `0x06`) to
+      avoid this problem. [issue #3593, PR #3604].
+
+    * Fixed a serious problem previously existed in all NUT versions that
+      made many instant commands unusable, including `bypass.start`,
+      `shutdown.return`, `shutdown.reboot`, and `shutdown.reboot.graceful`.
+      Any attempt to use them would fail, with an error logged to `syslog`:
+      `reg1 is negative`. [issue #3603, PR #3604].
+
+ - `metasys` driver updates:
+    * Fixed parsing of UPS serial number string from the response, now taking
+      care to constrain permitted lengths and offsets. [#GHSA-6p5c-r2jg-r9mj]
 
  - `nhs_ser` driver updates:
     * Modernized serial communication and added validated settings for baud
       rate, data bits, parity, stop bits, flow control, per-byte read timeout,
       and transmission pacing. Also improved serial resource handling and
       reconnection behavior. [issue #3510, PR #3543]
+    * Reworked incoming serial framing to use the total packet length declared
+      by byte `[1]`, instead of treating every `0xFF` as a new packet and every
+      `0xFE` as its end. A leading `0xFF` now starts a frame only while the
+      reader is idle; subsequent `0xFF` and `0xFE` values are preserved as
+      payload or checksum data. The frame is completed at its declared length
+      and accepted only when that final byte is `0xFE`. Declared lengths are
+      also bounded by the receive buffer before further bytes are stored.
+      This prevents valid 18-byte and 50-byte HWINFO replies containing an
+      internal `0xFF` from being split into unrecognized fragments, allowing
+      the driver to obtain model, firmware, serial number and battery-pack
+      information instead of repeatedly requesting HWINFO and delaying normal
+      polling. The raw packet captures and protocol analysis which made this
+      correction possible were contributed by GitHub user `freechurros`.
+      [issue #3592]
+    * Applied follow-up hardware-test feedback from `freechurros`: corrected
+      `interpret_pkt_hwinfo()` to validate the HWINFO checksum instead of the
+      DATA checksum, exposed unrecognized packets through `debug_pkt_raw`, and
+      published the documented lower-case `battery.charger.status` values for
+      compatibility with Home Assistant. [issue #3592]
+    * Send the long, short and compatibility hardware-discovery requests from
+      `upsdrv_initinfo()`, checking the serial descriptor before every request.
+      Failed or partial writes now mark data stale and invalidate the port so
+      the normal update cycle reopens it before further communication.
+    * Refresh cached model-specific data from every valid HWINFO packet and
+      restart discovery after a serial reconnection, allowing a replaced UPS
+      to be identified without restarting the driver.
+    * Added the legacy five-byte compatibility initialization request
+      (`FF 05 01 06 FE`) as a third fallback. The driver first makes six
+      extended initialization attempts, then selects randomly among the
+      extended, normal and compatibility requests so older or otherwise
+      compatibility-dependent NHS units can answer with their supported
+      protocol variant.
+    * Consolidated the NHS model-code metadata into an indexed lookup table,
+      preserving the existing model descriptions and nominal VA mappings while
+      making unknown-code handling explicit.
 
  - `nutdrv_qx` driver updates:
     * Added the `richcomm-svc` USB communication subdriver for older
@@ -98,15 +309,52 @@ https://github.com/networkupstools/nut/milestone/13
       reusing the existing Armac command framing and Megatec protocol. Polling
       and a quick battery test were verified with an SVC V-1000F
       (`0925:1234`, `UPS USB MON V1.4`). [issue #3562]
+    * Introduced a `santak` subdriver and protocol for single-phase Santak
+      Castle C*K units, developed and tested against a Castle C1K (`C1K(G7)`)
+      over RS232. These speak the same Q6 dialect as `innovart31`, but are
+      single-phase and NAK the `F` ratings query, so `innovart31` rejects them
+      outright. Model, nominal output and the input transfer window are read
+      from the `WH` command instead; `battery.charge`, `battery.runtime` and a
+      pack-level `battery.voltage` come from `Q6`, none of which the previously
+      documented `blazer_ser` mapping could provide. [issue #1039, PR #3662]
+    * Bounded USB reply parsing by the number of bytes actually received, in
+      the `ippon`, `cypress`, `phoenix`, `fuji` and `gtec` transports,
+      preventing out-of-bounds reads when a reply fills the buffer without
+      containing the expected carriage return or a zero byte. Beyond the debug
+      logging, the affected length also reached the reply returned to the
+      caller in the `ippon` and `fuji` transports.
     * Only claim a USB device as "supported" during discovery out of the box
       if `subdriver_command` was assigned (`1A86:7523` is used by CH340/341
       USB chips not only in UPSes). [issue #3410]
-    * Added a `cypress_0665_5161_subdriver` initialization method for devices
-      with USB ID `0665:5161` (Belkin, Voltronic, VOLT Polska) which enables
-      a quirk to drain stale bytes from USB buffers of the device before our
+    * Added a quirk for the `cypress` subdriver, enabled by default for
+      devices with USB ID `0665:5161` (Belkin, Voltronic, VOLT Polska),
+      to drain stale bytes from USB buffers of the device before our
       driver sends queries, and use a longer timeout. If this change breaks
       your device, please add `cypress_drain_quirk = 0` in your `ups.conf`
       and let us know. [issue #2534, PR #3563]
+    * With the `cypress_drain_quirk` enabled, keep replies in step with
+      commands after the UPS answered too late or sent data unasked. Such
+      a `0665:5161` bridge holds only the newest 8 reports (64 bytes) of UPS
+      output while the driver does not read, so the rest of a late reply was
+      taken for the reply to the next command, and a longer reply (e.g. the
+      76-byte Voltronic `QGS`) lost its start. Without the quirk (as in NUT
+      2.8.5) this kept the driver one reply behind, reporting "data stale"
+      until it was restarted. The driver now drains until the UPS stays quiet
+      for longer than it pauses within a reply (up to 160 ms were seen), and
+      logs unasked data (once, while it keeps recurring). If the device keeps
+      sending for longer than a reply takes (3 seconds), it resets the USB
+      device and reconnects, up to 3 times in a row, before giving up and
+      exiting, instead of exiting right away with a misleading "Got
+      disconnected by another driver" message. [PR #3720]
+    * A USB reconnection attempt which failed again (the device was closed
+      for another reconnection) is no longer reported as "re-established",
+      for all USB subdrivers. So with a positive `reconnect_max_tries`, such
+      attempts now count towards that limit instead of resetting the count.
+      [PR #3720]
+    * The `cypress_drain_quirk` setting (and its default for USB ID
+      `0665:5161`) now also applies when `subdriver = cypress` is set
+      explicitly in `ups.conf`; previously that silently turned the quirk
+      off. [PR #3720]
     * Modified `megatec` subdriver to allow `ups.firmware` with empty contents
       (when a device returns all-spaces in that part of the `I` query response)
       out of the box and not ignore the device as unsupported, by adding the
@@ -135,14 +383,19 @@ https://github.com/networkupstools/nut/milestone/13
       DSM 7.3-86009 GPL sources and version 1.02 distributed in the QNAP QTS
       5.2.3 GPL sources. Polling and the direct shutdown commands were verified
       on an unloaded BN150T over USB; other OMRON models and serial connections
-      are untested.
-      [issue #3112]
+      are untested. [issue #3112, PR #3554]
+    * Updated `voltronic` subdriver to support Microtek/Voltronic UPS devices
+      that report `QPI` as `(PI71`, such as Microtek GI3KL 3000VA Online UPS.
+      [PR #3655]
     * In `Voltronic-QS-Hex` subdriver, the format string sanity check added in
       recent NUT releases caught a mismatch in `ups.load` reading. [issue #3532]
     * Modified `voltronic-qs` subdriver to request the QI command, supplying
       NUT with battery charge, runtime, input frequency, output current, and
       input transfer low/high values on devices which support it (`H`, `I`, `J`
       protocols, e.g. Powershield PSDR800). [#3521]
+    * Fixed incorrect claim for `innovart33` subdriver -- the original device
+      claiming procedure was borrowed from `innovart31` without thoroughly
+      checking the code. [issue #3661, PR #3713]
 
  - Introduced a new NUT driver named `ragtech` which provides support for the
    Ragtech "Easy Pro" family of line-interactive UPS units (also sold under
@@ -212,12 +465,71 @@ https://github.com/networkupstools/nut/milestone/13
       were unaffected. [PR #3555]
     * `mge-hid` subdriver updated to suppress `CHRG` status on constant-charge
       mode devices when battery is fully charged. [issue #3518, PR #3519]
+    * `mge-hid` subdriver: extended the `mge_model_names[]` list for the
+      Eaton 5P Gen2 series (largely guessing, feedback and PRs for
+      adaptation to actual string values reported by devices via USB are
+      welcome), so these devices would now report `battery.voltage` and
+      `battery.voltage.nominal`. [#2380]
+    * `cps-hid` subdriver: widened under-declared Logical Maximums for
+      `UPS.Input.Voltage`, `UPS.Input.ConfigVoltage`, `UPS.PowerSummary.Voltage`
+      and `UPS.PowerSummary.ConfigVoltage` on CyberPower HID devices (e.g.
+      PR3000ELCDSL/PR3000ELCDSXL, USB ID `0764:0601`), which transmit correct
+      values but declare maximums below them, so NUT masked/clamped them to
+      wrong readings (`input.voltage` 70, `battery.voltage` 22.4 instead of
+      ~225 / ~48 V). The fixes mirror the established `cps_fix_report_desc()`
+      and `apc-hid` patterns for this device family. [issue #3089]
+    * `tripplite-hid` subdriver now recovers the output power reading, which was
+      published as a constant `0.0`. Two defects combined: the HID `ActivePower`
+      usages were mapped to `ups.power`, which `docs/nut-names.txt` defines as
+      apparent power (VA) rather than real power (W); and on the tested
+      SMART1500LCD the firmware declares its `ActivePower` item with the HID PDC
+      unit for watts/VA (`0x0000D121`) while leaving the Unit Exponent at 0, so
+      `get_unit_expo()` applied a factor of 1e-7 and a genuine 520 W reading
+      arrived as 5.2e-05, which the `%.1f` format then rendered as `0.0`.
+      Both `ActivePower` usages now map to `ups.realpower`, matching the
+      `cps-hid` and `mge-hid` subdrivers; `ups.power` is mapped to the
+      corresponding `ApparentPower` usages and `ups.realpower.nominal` to
+      `UPS.Flow.ConfigActivePower`. A new `tripplite_fix_report_desc()` supplies
+      the exponent the firmware omits; it is deliberately limited to the
+      `ActivePower` item, since no Tripp Lite descriptor is known to expose an
+      `ApparentPower` item with the same defect. Verified on a SMART1500LCD
+      (`09ae:2012`), which now reports `ups.realpower: 512.0` at `ups.load: 56`
+      against its 900 W rating. Note this is a behaviour change for units that
+      report a non-zero `ActivePower`: the reading moves from `ups.power` to
+      `ups.realpower`. [issue #3580, PR #3581]
+    * in `legrand-hid` subdriver the `beeper.disable` instant command now
+      sends `AudibleAlarmControl=1` ("disabled") instead of `3` ("muted"),
+      so the buzzer stays off across alarms; added `beeper.mute` and
+      `ups.beeper.status`. [issue #3638, PR #3639]
+    * Added a new `vertiv-hid` subdriver for the Vertiv Liebert GXT5 (USB ID
+      `10af:1000`). This device shares the Liebert vendor ID handled by
+      `belkin-hid`, but exposes everything under `UPS.PowerSummary` only (no
+      `UPS.Input`, `UPS.Output` or `UPS.Battery` collections), so with the
+      previous subdriver only 8 of 83 mappings matched: `ups.load` was never
+      published, `battery.runtime` was served in minutes, and
+      `battery.voltage` read `0.4` because the firmware declares its Volt
+      items with a Unit Exponent of 5 instead of 7. The new subdriver maps
+      the PowerSummary usages, converts runtime to seconds, and repairs the
+      exponent with a `fix_report_desc()` hook (so `disable_fix_report_desc`
+      reverts it). `belkin-hid` now explicitly declines `10af:1000` so the
+      new subdriver is used even when `productid` is set in `ups.conf`.
+      Tested against a GXT5 on mains only; on-battery status transitions
+      are not yet confirmed. [issue #3613, PR #3730]
 
  - `snmp-ups` driver updates:
+    * Fixed a NULL pointer dereference when setting exact outlet mappings
+      without a corresponding numbered outlet template, and restored handling
+      of exact server-side outlet variables and commands. [issue #3360,
+      PR #3610]
+    * `apc` subdriver: exposed `ambient.temperature` from universal I/O
+      sensors used with APC Network Management Card 3. [issue #3250]
     * Extended the XPPC-MIB subdriver (enterprise 935) to expose
       `battery.runtime`, `battery.voltage`, `input.frequency`,
       `output.voltage.nominal` and `ups.firmware.aux` from Phoenixtec
       based UPS cards that already answer the rest of the subtree. [#2608]
+    * Mapped `standby(8)` from XPPC output status to `OL` rather than `OFF`,
+      because line-interactive devices use it for inverter standby while their
+      UPS output remains online on utility power. [issue #3512]
     * Introduced `voltronic` subdriver for Voltronic enterprise 43943 UPSes,
       developed and tested against a PowerShield Centurion RT 1000VA
       (PSCERT1000) with a PSSNMPV4 card running firmware 1.1.8.C. [issue #3478,
@@ -230,12 +542,27 @@ https://github.com/networkupstools/nut/milestone/13
       not do so for single-driver runs -- addressed with this release. [#3302]
 
  - common code:
+    * The configuration and protocol parser now accepts a literal `#`
+      inside double quotes, including in UPS and `dummy-ups` outlet
+      descriptions. Unquoted `#` still starts a comment, and escaped
+      hashes remain supported. Encoded output continues to escape hashes
+      for older peers; default `upsc` text output is unchanged.
+      [issues #607, #1306, PR #3633]
+    * The common state store now retains value changes which differ only in
+      letter case, including updates to opaque strings such as `device.contact`.
+      Variable names remain case-insensitive and immutable values remain
+      protected from changes. [issue #3622, PR #3630]
+    * POSIX daemons now warn if their real or effective UID remains zero after
+      the common credential switch. [issue #3471, PR #3609]
     * Refactored `common::background()` method used by numerous NUT daemons
       to handle parent and child code paths by separately addressable methods.
       This got used in the shared drivers `main` code file to preclude losing
       track of some libusb resources when forking the daemon. [#3437]
     * Revised 'dstate' machinery to track socket connections closed mid-way
       through a call, to avoid access after `free()`. [#3302]
+    * Some operating systems provide in `sys/stdarg.h` definitions that others
+      access through common `stdarg.h` -- code updated to try including both.
+      [PR #3577]
     * Debug logging in `dstate.c` and `upssched.c` reported sent buffers "as
       is", complete with a confusing blank line where `\n` ended the message.
       This is now passed through newly introduced `upsdebug_ascii_compact()`
@@ -268,8 +595,22 @@ https://github.com/networkupstools/nut/milestone/13
       exiting right away or remaining in data stale mode indefinitely, also
       using `reconnect_trying()` for consistent reporting. They now track
       serial port file descriptor validity a bit more diligently. [PR #3541]
+    * The `hidparser.c` code (used primarily in USB drivers) risked a heap
+      out-of-bounds write if a device reported a HID report descriptor with
+      more usage items than the fixed stack in the parser could hold. A similar
+      problem could lead to "HID path too long" messages and loss of
+      readings from the device. [PR #3586]
+    * The `hidparser.c` code was further updated to use not a fixed 50-entry
+      "usage table" buffer for resource descriptor parsing, but one aligned
+      with the actual size detected during device discovery. This should
+      avoid potential truncation introduced by the fix above (and avoid
+      the overflows it addressed) in normal device interactions. [#3588]
 
  - NUT client libraries:
+    * The Perl `UPS::Nut` module now decodes quoted values and backslash
+      escapes in query/list replies and `nutauth.conf` entries, and quotes
+      authentication arguments. Single quotes in configuration are literal.
+      Command descriptions now accept the server's `CMDDESC` response.
     * Complete support for actions documented in `docs/net-protocol.txt`
       was implemented in C++, Python and PERL bindings in-tree, and for Java
       in link:https://github.com/networkupstools/jNut[jNut] nearby. Among
@@ -281,6 +622,10 @@ https://github.com/networkupstools/nut/milestone/13
       query (for protocol version) to verify that handshake succeeded.
       This change impacted also the classic C `libupsclient` library.
       [issue #3387, PR #3402]
+    * `PyNUTClient.disconnect()` now attempts to send `LOGOUT`, closes the
+      socket and clears its reference while the client remains alive. Such
+      cleanup remains harmless when repeated or when socket operations fail.
+      [issue #3619, PR #3627]
     * Updated OpenSSL code paths in the `libupsclient` C library to support
       features earlier only available with NSS builds, like specifying the
       client certificate+key, optionally with password, and pinning expected
@@ -303,6 +648,19 @@ https://github.com/networkupstools/nut/milestone/13
       report the ability to check `CERTIDENT` information. [#3331]
     * Introduced support for "authconf" files to store and convey NUT client
       authentication details. [issue #3329]
+    * Added C/C++ client support for multiple independent OpenSSL contexts
+      in the same process, or using multiple NSS client certificates with
+      its single context, for ability to connect to NUT data servers managed
+      by different entities (e.g. certificate authorities and client/server
+      realms). In-tree multiple-connection clients (`upsmon`, `upsstats.cgi`,
+      `upslog`) were updated to use this feature. [issue #3439]
+    * To support the ability of multiple SSL authentication details for
+      `upsmon` and `upsstats.cgi`, their configuration files were extended
+      with `AUTHCONF` keyword which can point to the `nutauth.conf` file
+      they should use, or pass the special values `default` (require a
+      user- or system-provided `nutauth.conf` file) or `none` (skip
+      authconf discovery entirely), matching the `-A` option semantics
+      of command-line NUT clients. [issue #3439]
 
  - Various clients:
     * Flush standard output and error buffers before handling clean exit
@@ -318,10 +676,10 @@ https://github.com/networkupstools/nut/milestone/13
       SSL settings in the client which previously only did best-effort attempts
       at secure communications without an individual certificate, and only
       anonymously for reading. The new `-A filename` option defaults to trying
-      to use a `nutauth.conf` file (if found in one of the default locations)
-      but not failing if one is not usable; specific values can require use of
-      such a file (`default`) or to not even try reading one (`none`).
-      [issues #3329, #3411]
+      to use a `nutauth.conf` file (if NOT specified here, but rather found in
+      one of the default locations) but not failing if one is not usable; any
+      specific values can require use of such a file (`default`) or to not even
+      try reading one (`none`). [issues #3329, #3411]
 
  - `upslog` client/tool updates:
     * Added support for best-effort use of `nutauth.conf` files from default
@@ -335,6 +693,8 @@ https://github.com/networkupstools/nut/milestone/13
     * Added support for best-effort use of `nutauth.conf` files from default
       locations described above (no way to choose the location, other than
       by web-server environment variables for CGI calls). [#3329]
+    * `upsstats.cgi` additionally has a new `AUTHCONF` configuration option
+      that can be passed via its `hosts.conf` file, as detailed above. [#3439]
 
  - `upsmon` client updates:
     * Introduced support for `CERTFILE` option, so the client can identify
@@ -366,12 +726,17 @@ https://github.com/networkupstools/nut/milestone/13
     * Rewrote the WIN32 code path to spawn the timer daemon. [issue #3525]
 
  - `NUT-Monitor` Python GUI client:
+    * The PyQt5 and PyQt6 `NUT-Monitor` commands now share one Python 3
+      implementation. The dispatcher accepts `NUT_MONITOR_QT=5` or
+      `NUT_MONITOR_QT=6` to require a particular backend. [PR #3596]
     * Fixed Qt tray tooltips to render in plain text, not rich text which
       ended up as literal HTML on KDE Plasma 6; now that rich text formatting
       is only used for main window status labels. [PR #3430]
     * Fixed both Python 2 and 3 variants to handle automatic client reconnection
       (e.g. after system suspend/resume, network interruption, or NUT server
       restart). [issue #3509, PR #3523]
+    * Fixed wrong lookup into UI widgets which broke reconnection. [PR #3616]
+    * Fixed some issues with Qt6 startup and desktop file integration. [#3624]
     * Added support for `nutauth.conf` files as source of configuration about
       default/server/user access credentials and SSL setup. [#issue #3514]
     * Fixed TAB/SHIFT-TAB focus change order through login page. [PR #3533]
@@ -382,6 +747,16 @@ https://github.com/networkupstools/nut/milestone/13
     * Added a `clean_exit()` handler similar to that in `upsmon`. [PR #3499]
 
  - `upsd` data server updates:
+    * Validate complete numeric values and conversion ranges for `MAXAGE`,
+      `TRACKINGDELAY`, `MAXCONN` and `CERTREQUEST` in `upsd.conf`, retaining
+      the previous setting when conversion fails. Preserve public types
+      and avoid overflow in the `MAXAGE` grace-second calculation at the
+      maximum signed integer value. [issue #676]
+    * The `LISTEN` directive in `upsd.conf` now accepts `hostname:port`,
+      `IPv4:port` and `[IPv6]:port`, with matching support in `nutconf` and
+      Augeas. IPv6 addresses ending in `::` also accept an appended `:port`,
+      such as `:::3493`. Bare IPv6 addresses and the existing space-separated
+      address and port syntax retain their meaning. [issue #2424, PR #3709]
     * If we hit "Too many open files" during configuration reload, close
       the oldest client connection and retry. [issue #3365]
     * If the `MAXCONN` requested in the configuration file exceeds the OS
@@ -394,7 +769,84 @@ https://github.com/networkupstools/nut/milestone/13
       aspect of that, it should now abort with an explanation (and not proceed
       with insecure start-up like it could do before). [issue #3331, PR #3435]
 
+ - The `nut-driver-enumerator.sh` script (NDE) updates:
+    * The shell/`awk` based parser now decodes `ups.conf` values using NUT token
+      syntax, preserving quoted hashes and escaped characters and ignoring
+      trailing comments. For example, `port = "auto" # comment` now properly
+      selects USB media for `nutdrv_qx`. The normalized configuration output
+      retains quotes and backslashes; changed section checksums can cause a
+      one-time reconciliation after upgrading. [PR #3635]
+
+ - Revised dusty corners of NUT documentation:
+    * Documented the existing `mfr` and `model` options for `liebert`.
+      Documented `sysfs_dir` for `hwmon_ina219`, and corrected the `hwmon`
+      path in this driver and documented the integer range and default for
+      its low battery threshold. [issue #2422, PR #3671]
+    * Documented how to use `sdcommands` with a stopped driver daemon to
+      send a supported instant command (typically for shutdown) without
+      a locally running `upsd` data server. [issue #1677, PR #3672]
+    * Updated the `m4` macro reference for developers of the `configure` script
+      in `docs/macros.txt`. [PR #3674]
+    * Corrected the installation staging example to preserve the source tree
+      (temporary workspace) and stop when staging prerequisites fail. [PR #3677]
+    * Initialized the connection pointer in the C++ client example before
+      exception handling. [PR #3678]
+    * Corrected `libupsclient` API declarations, logging examples and the
+      descriptions of SSL capability flags and raw line reads. [PR #3679]
+    * Corrected `nut-scanner` library (`libnutscan`) API descriptions and
+      the consumer example for current function names, argument types,
+      device-option pointers and initialization. [PR #3680]
+    * Corrected source retrieval examples, removed an unsupported `configure`
+      script option and documented the `pkg-config` installation-directory
+      default. [PR #3681]
+    * Corrected protocol notation and updated the architecture documentation
+      for individual variable requests and command tracking. [PR #3682]
+    * Corrected the simulation filename and recorder command in the developer
+      walk-through, and fixed quoting in the recorder manual example. [PR #3683]
+    * Corrected `nut-scanner` simulation-file and configuration-directory
+      documentation and help, and repaired inconsistent scan examples. [PR #3684]
+    * Corrected `upsmon` notification argument handling and escaping examples,
+      shared-timer examples and the documented `FINALDELAY` default. [PR #3685]
+    * Corrected the PyNUT `GetUPSCommands` method example and the `GetUPSNames`
+      return-type documentation. [PR #3686]
+    * Corrected the documented connection defaults for `upsc`, `upscmd`,
+      `upsrw`, `upsmon` and `upslog` clients, and preserved the remote
+      destination in the `upsc` query-loop example. [PR #3687]
+    * Clarified client authentication configuration, unattended credential
+      selection and instant-command permissions. [PR #3688]
+    * Corrected the `upsd` manual descriptions of state-path precedence
+      and debug-output stream. [PR #3689]
+    * Updated the `apc_modbus` manual for its implemented capabilities,
+      timeout defaults and register-read attempt limit, and corrected the
+      corresponding help text in the `apc_modbus` driver program. [PR #3690]
+    * Updated APC Microlink support references and qualified the USB
+      kernel-driver detachment guidance. [PR #3691]
+    * Corrected standalone `belkinunv` and `genericups` driver examples
+      to supply a driver identifier and port option, and clarified the
+      `genericups` monitoring prerequisite. [PR #3692]
+    * Corrected the GPIO driver executable name in examples and fixed
+      a quoted value in its udev rule example. [PR #3693]
+    * Added the required USB identity fields to the Gtec configuration
+      example for `nutdrv_qx` driver, with explicit placeholders for the
+      USB device identifiers. [PR #3694]
+    * Removed unsupported quick-test duration configuration guidance from
+      the Powervar serial and USB manuals. [PR #3695]
+    * Removed an ineffective notification option recommendation from the
+      `mge-shut` driver troubleshooting guidance. [PR #3696]
+    * Corrected the `upsdrvsvcctl` command reference and removed a stale TODO
+      reminder for its existing shutdown fallback. [PR #3697]
+    * Corrected the grep pattern, directory path and displayed result prefixes
+      in the FUSE data-walk example, and fixed a spelling error in the README.
+      Added `scripts/fuse` files to `EXTRA_DIST` and `spellcheck` goals. [PR #3698]
+    * Corrected documentation cross-references and exact variable, option,
+      command and sample-file names in examples. Updated the spelling
+      dictionary for verified terms. [PR #3699]
+
  - Recipes, CI and helper script updates not classified above:
+    * Introduced `AGENTS.md` for AI agents to help in a consistent manner with
+      minimal friction. [#3608]
+    * Introduced `SECURITY.md` for rules about responsible disclosure of
+      potentially exploitable bugs. [#3470]
     * Introduced `ci_build.sh` settings and respective CI workflow settings
       to optionally re-use a `config.cache` file from older runs, and similar
       logic for NIT `nit.sh` to re-use generated certificate and private key
@@ -404,6 +856,12 @@ https://github.com/networkupstools/nut/milestone/13
       Directory names are based on hashes of strings that identify the content,
       which are size-limited to some 8 characters.
       [issues #3108, #3390, #1711, #3526, PR #3109]
+    * Introduced `tools/asciidoc-github-links.pl` to simplify `docs/Makefile.am`
+      generation of `*.adoc-parsed` files with substituted GitHub links, and to
+      allow that logic to be executed separately from `make` and potentially be
+      re-used by other projects. Added support for lists of PRs/issues as used
+      in this document, and support for GitHub Security Advisories (GHSA).
+      [PR #3594, issue #1953]
     * Rearranged the GHA job to prepare Dist and Docs Tarballs. [PR #3460]
     * Updated `scripts/Windows/dllldd.sh` helper script to better detect DLL
       names not exposed with dynamic linking metadata (e.g. some Mozilla NSS
@@ -503,8 +961,8 @@ but the `nutshutdown` script would bail out quickly and quietly. [PR #3008]
      `upscli_ssl_caps()`. Updated common NUT clients to report this info
      in their detailed help banners. Done similarly for `upsd`. The NIT
      (NUT Integration Test) suite piggy-backs on this to add run-time
-     dependent tests of SSL capability. Added `upscli_set_debug_level()`
-     and `upscli_set_debug_level()` methods to facilitate NUT debugging
+     dependent tests of SSL capability. Added `upscli_upslog_set_debug_level()`
+     and `upscli_upslog_get_debug_level()` methods to facilitate NUT debugging
      for clients built with shared NUT private libraries. [issues #3328,
      #1771, #2800, PR #3330]
    * Revised OpenSSL handshake to support retries requested by the library,

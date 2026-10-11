@@ -26,7 +26,12 @@
 
 #include <stdio.h>
 #ifndef WIN32
-# include <stdarg.h>
+# ifdef HAVE_STDARG_H
+#  include <stdarg.h>
+# endif
+# ifdef HAVE_SYS_STDARG_H
+#  include <sys/stdarg.h>
+# endif
 # include <sys/stat.h>
 # include <pwd.h>
 # include <sys/types.h>
@@ -195,8 +200,9 @@ static TYPE_FD sock_open(const char *fn)
 #else /* WIN32 */
 	SECURITY_ATTRIBUTES	pipe_sa;
 	SECURITY_DESCRIPTOR	pipe_sd;
+	PACL	pipe_acl;
 
-	init_pipe_security(&pipe_sa, &pipe_sd);
+	pipe_acl = init_pipe_security(&pipe_sa, &pipe_sd);
 
 	upsdebugx(6, "%s: opening NAMED_PIPE for listening: '%s'",
 		__func__, fn);
@@ -213,6 +219,7 @@ static TYPE_FD sock_open(const char *fn)
 		ST_SOCK_BUF_LEN,	/* input buffer size */
 		0,			/* client time-out */
 		&pipe_sa);
+	free(pipe_acl);
 
 	if (INVALID_FD(fd)) {
 		upsdebugx(1, "%s: Can't create a state socket "
@@ -331,23 +338,13 @@ static void send_to_all(const char *fmt, ...)
 	conn_t	*conn, *cnext;
 
 	va_start(ap, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	ret = vsnprintf(buf, sizeof(buf), fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	if (ret < 1) {
@@ -462,23 +459,13 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 	}
 
 	va_start(ap, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	ret = vsnprintf(buf, sizeof(buf), fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	upsdebugx(2, "%s: sending (got %" PRIiSIZE " from vsnprintf): %.*s",
@@ -652,8 +639,9 @@ static void sock_connect(TYPE_FD sock)
 #else /* WIN32 */
 	SECURITY_ATTRIBUTES	pipe_sa;
 	SECURITY_DESCRIPTOR	pipe_sd;
+	PACL	pipe_acl;
 
-	init_pipe_security(&pipe_sa, &pipe_sd);
+	pipe_acl = init_pipe_security(&pipe_sa, &pipe_sd);
 
 	/* We have detected a connection on the opened pipe.
 	 * So we start by saving its handle and creating
@@ -677,6 +665,7 @@ static void sock_connect(TYPE_FD sock)
 		ST_SOCK_BUF_LEN,	/* input buffer size */
 		0,			/* client time-out */
 		&pipe_sa);
+	free(pipe_acl);
 
 	if (INVALID_FD(sockfd)) {
 		upsdebugx(1, "%s: Can't open state socket "
@@ -1740,24 +1729,14 @@ int vdstate_setinfo(const char *var, const char *fmt, va_list ap)
 	int	ret;
 	char	value[ST_MAX_VALUE_LEN];
 
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations e.g. by using the
 	 * dstate_setinfo_dynamic() method). */
 	vsnprintf(value, sizeof(value), fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 
 	ret = state_setinfo(&dtree_root, var, value);
 
@@ -1774,24 +1753,14 @@ int dstate_setinfo(const char *var, const char *fmt, ...)
 	va_list	ap;
 
 	va_start(ap, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations e.g. by using the
 	 * dstate_setinfo_dynamic() method). */
 	ret = vdstate_setinfo(var, fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	return ret;
@@ -1806,20 +1775,10 @@ int dstate_setinfo_dynamic(const char *var, const char *fmt_dynamic, const char 
 		va_list	ap;
 
 		va_start(ap, fmt_reference);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 		/* Using validated formatting string here */
 		ret = vdstate_setinfo(var, fmt_dynamic, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 		va_end(ap);
 
 		return ret;
@@ -1831,24 +1790,14 @@ int vdstate_addenum(const char *var, const char *fmt, va_list ap)
 	int	ret;
 	char	value[ST_MAX_VALUE_LEN];
 
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations e.g. by using the
 	 * dstate_addenum_dynamic() method). */
 	vsnprintf(value, sizeof(value), fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 
 	ret = state_addenum(dtree_root, var, value);
 
@@ -1865,24 +1814,14 @@ int dstate_addenum(const char *var, const char *fmt, ...)
 	va_list	ap;
 
 	va_start(ap, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations e.g. by using the
 	 * dstate_addenum_dynamic() method). */
 	ret = vdstate_addenum(var, fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	return ret;
@@ -1897,20 +1836,10 @@ int dstate_addenum_dynamic(const char *var, const char *fmt_dynamic, const char 
 		va_list	ap;
 
 		va_start(ap, fmt_reference);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 		/* Using validated formatting string here */
 		ret = vdstate_addenum(var, fmt_dynamic, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 		va_end(ap);
 
 		return ret;
@@ -2401,26 +2330,9 @@ void alarm_set(const char *buf)
 			alarm_tmp[3] = '\0';
 			buflen = strlen(alarm_tmp);
 		} else {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-/* Note for gating macros above: unsuffixed HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP
- * means support of contexts both inside and outside function body, so the push
- * above and pop below (outside this finction) are not used.
- */
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-/* Note that the individual warning pragmas for use inside function bodies
- * are named without a _INSIDEFUNC suffix, for simplicity and legacy reasons
- */
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-type-limits.h"
 			if ((unsigned long long int)ibuflen < SIZE_MAX) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-type-limits-end.h"
 				buflen = (size_t)ibuflen;
 			} else {
 				buflen = SIZE_MAX;
@@ -2444,19 +2356,9 @@ void alarm_set(const char *buf)
 			alarm_tmp[3] = '\0';
 			buflen = strlen(alarm_tmp);
 		} else {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-type-limits.h"
 			if ((unsigned long long int)ibuflen < SIZE_MAX) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-type-limits-end.h"
 				buflen = (size_t)ibuflen;
 			} else {
 				buflen = SIZE_MAX;

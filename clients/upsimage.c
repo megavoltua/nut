@@ -335,15 +335,7 @@ static void noimage(const char *fmt, ...)
 	va_list		ap;
 
 	va_start(ap, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: Not converting to hardened NUT methods with dynamic
 	 * format string checking, this one is used locally with
 	 * fixed strings (and args) */
@@ -351,9 +343,7 @@ static void noimage(const char *fmt, ...)
 	 * needed here: one use-case of having a format, and another
 	 * with externally prepared snprintf(). */
 	vsnprintf(msg, sizeof(msg), fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	width = get_imgarg("width");
@@ -714,6 +704,11 @@ int main(int argc, char **argv)
 	upscli_upslog_set_debug_level(nut_debug_level, nut_common_cookie());
 #endif
 
+	/* TOTHINK: ifdef this away from common builds?..
+	 * WARNING: Debug logs are likely not HTML-safe,
+	 * as in html_print_esc() use-cases, and anyway
+	 * will explode the image contents!
+	 */
 	if (nut_debug_level > 0) {
 		cgilogbit_set();
 		printf("Content-type: text/html\n");

@@ -1233,6 +1233,22 @@ void ssl_init(void)
 	if (SSL_CTX_set_cipher_list(ssl_ctx, "HIGH:@STRENGTH") != 1) {
 		ssl_debug();
 		fatalx(EXIT_FAILURE, "SSL configuration was specified, but NUT server failed to initialize OpenSSL backend: SSL_CTX_set_cipher_list failed");
+	} else {
+		/* Pragmas due to macro'd definition details of sk_SSL_CIPHER* etc.
+		 * upsetting some compilers (e.g. older clang in C99 mode)
+		 */
+#include "nut-pragmas-unreachable-code.h"
+		SSL	*tmp_ssl = SSL_new(ssl_ctx);
+		STACK_OF(SSL_CIPHER)	*ciphers = SSL_get_ciphers(tmp_ssl);
+		int	ii;
+
+		for (ii = 0; ii < sk_SSL_CIPHER_num(ciphers); ii++) {
+			const SSL_CIPHER	*c = sk_SSL_CIPHER_value(ciphers, ii);
+			upsdebugx(6, "%s: upsd enabled cipher: %s", __func__, SSL_CIPHER_get_name(c));
+		}
+
+		SSL_free(tmp_ssl);
+#include "nut-pragmas-unreachable-code-end.h"
 	}
 
 # ifdef WITH_CLIENT_CERTIFICATE_VALIDATION
@@ -1398,6 +1414,7 @@ void ssl_init(void)
 	) {
 		upslogx(LOG_ERR, "Invalid certificate requirement");
 		fatalx(EXIT_FAILURE, "SSL configuration was specified, but NUT server failed to initialize NSS backend.");
+	}
 
 	if (certrequest == NETSSL_CERTREQ_REQUEST	/* 1 */
 	 || certrequest == NETSSL_CERTREQ_REQUIRE	/* 2 */

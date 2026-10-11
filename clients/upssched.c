@@ -805,8 +805,9 @@ static TYPE_FD open_sock(void)
 #else /* WIN32 */
 	SECURITY_ATTRIBUTES	pipe_sa;
 	SECURITY_DESCRIPTOR	pipe_sd;
+	PACL	pipe_acl;
 
-	init_pipe_security(&pipe_sa, &pipe_sd);
+	pipe_acl = init_pipe_security(&pipe_sa, &pipe_sd);
 
 	fd = CreateNamedPipe(
 			pipefn,		/* pipe name */
@@ -821,6 +822,7 @@ static TYPE_FD open_sock(void)
 			BUF_LEN,	/* input buffer size */
 			0,		/* client time-out */
 			&pipe_sa);	/* default security attributes */
+	free(pipe_acl);
 
 	if (INVALID_FD(fd)) {
 		fatal_with_errno(EXIT_FAILURE,
@@ -885,23 +887,13 @@ static int send_to_one(conn_t *conn, const char *fmt, ...)
 	char	buf[US_SOCK_BUF_LEN];
 
 	va_start(ap, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: Not converting to hardened NUT methods with dynamic
 	 * format string checking, this one is used locally with
 	 * fixed strings (and args) */
 	/* FIXME: Actually, only fixed strings, no formatting here. */
 	vsnprintf(buf, sizeof(buf), fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	buflen = strlen(buf);
@@ -1046,13 +1038,14 @@ static TYPE_FD conn_add(TYPE_FD sockfd)
 	conn_t	*conn, *tmp, *last;
 	SECURITY_ATTRIBUTES	pipe_sa;
 	SECURITY_DESCRIPTOR	pipe_sd;
+	PACL	pipe_acl;
 
 	/* We have detected a connection on the opened pipe. So we start
 	 * by saving its handle and creating a new pipe for future connection */
 	conn = xcalloc(1, sizeof(*conn));
 	conn->fd = sockfd;
 
-	init_pipe_security(&pipe_sa, &pipe_sd);
+	pipe_acl = init_pipe_security(&pipe_sa, &pipe_sd);
 
 	/* sock is the handle of the connection pending pipe */
 	acc = CreateNamedPipe(
@@ -1068,6 +1061,7 @@ static TYPE_FD conn_add(TYPE_FD sockfd)
 			BUF_LEN,	/* input buffer size */
 			0,		/* client time-out */
 			&pipe_sa);	/* default security attribute */
+	free(pipe_acl);
 
 	if (INVALID_FD(acc)) {
 		fatal_with_errno(EXIT_FAILURE,
@@ -1148,8 +1142,8 @@ static int sock_arg(conn_t *conn)
 
 		while (item) {
 			if (item->name) {
-				send_to_one(conn, "%s\t%ld\t%g\t",
-					item->name, (long)item->etime, difftime(item->etime, now));
+				send_to_one(conn, "%s\t%" PRIiMAX "\t%g\t",
+					item->name, (intmax_t)item->etime, difftime(item->etime, now));
 
 				s = NULL;
 				if (item->notifytypes && *(item->notifytypes) && **(item->notifytypes)) {

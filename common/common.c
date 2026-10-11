@@ -586,16 +586,7 @@ uint64_t	upsnotify_extend_timeout_usec_default = 600 * 1000000,
 
 pid_t get_max_pid_t(void)
 {
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-#pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
-#endif
+#include "nut-pragmas-unreachable-code.h"
 	if (sizeof(pid_t) == sizeof(short)) return (pid_t)SHRT_MAX;
 	if (sizeof(pid_t) == sizeof(int)) return (pid_t)INT_MAX;
 	if (sizeof(pid_t) == sizeof(long)) return (pid_t)LONG_MAX;
@@ -605,12 +596,7 @@ pid_t get_max_pid_t(void)
 # endif
 #endif
 	abort();
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-unreachable-code-end.h"
 }
 
 void check_perms(const char *fn)
@@ -983,6 +969,8 @@ void become_user(struct passwd *pw)
 	/* if we can't switch users, then don't even try */
 	intmax_t initial_uid = getuid();
 	intmax_t initial_euid = geteuid();
+	intmax_t final_uid;
+	intmax_t final_euid;
 
 	if (!pw) {
 		upsdebugx(1, "Can not become_user(<null>), skipped");
@@ -1019,8 +1007,16 @@ void become_user(struct passwd *pw)
 	if (setuid(pw->pw_uid) == -1)
 		fatal_with_errno(EXIT_FAILURE, "setuid");
 
+	final_uid = getuid();
+	final_euid = geteuid();
+	if ((final_uid == 0) || (final_euid == 0)) {
+		upslogx(LOG_WARNING, "Warning: running as root (UID=%jd EUID=%jd)",
+			final_uid, final_euid);
+		return;
+	}
+
 	upsdebugx(1, "Succeeded to become_user(%s): now UID=%jd GID=%jd",
-		pw->pw_name, (intmax_t)getuid(), (intmax_t)getgid());
+		pw->pw_name, final_uid, (intmax_t)getgid());
 #else	/* WIN32 */
 	/* NUT_WIN32_INCOMPLETE_MAYBE_NOT_APPLICABLE(); */
 	upsdebugx(1, "Can not become_user(%s): not implemented on this platform",
@@ -1295,19 +1291,9 @@ process_stat_symlink:
 				procname = NULL;
 				goto process_parse_file;
 			}
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-type-limits.h"
 			if ((unsigned int)nbytes > SIZE_MAX || procnamelen <= (size_t)nbytes) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-type-limits-end.h"
 				upsdebugx(1, "%s: failed to readlink() from %s: may have been truncated",
 					__func__, pathname);
 				free(procname);
@@ -2587,20 +2573,10 @@ int vsnprintfcat(char *dst, size_t size, const char *fmt, va_list ap)
 		return -1;
 	}
 
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided format string */
 	ret = vsnprintf(dst + len, size - len, fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 
 	dst[size] = '\0';
 
@@ -2627,20 +2603,10 @@ int snprintfcat(char *dst, size_t size, const char *fmt, ...)
 	int ret;
 
 	va_start(ap, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided format string */
 	ret = vsnprintfcat(dst, size, fmt, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	return ret;
@@ -2871,16 +2837,7 @@ char *xbasename_no_ext(const char *file)
 #endif
 
 	/* Some compilers detect that conditions are not changing at run-time: */
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-#pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
-#endif
+#include "nut-pragmas-unreachable-code.h"
 
 	if (!exeext) {
 #ifdef EXEEXT
@@ -2917,12 +2874,7 @@ char *xbasename_no_ext(const char *file)
 	if (!bn) {
 		bn = xstrdup(cs);
 	}
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-unreachable-code-end.h"
 
 	return bn;
 }
@@ -3157,30 +3109,11 @@ const char *str_upsnotify_state(upsnotify_state_t state) {
 			 * when starting/stopping
 			 */
 			return "NOTIFY_STATE_EXTEND_TIMEOUT";
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wunreachable-code"
-# pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 		default:
 			/* Must not occur. */
 			return "NOTIFY_STATE_UNDEFINED";
-#ifdef __clang__
-# pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 	}
 }
 
@@ -3260,22 +3193,12 @@ int upsnotify(upsnotify_state_t state, const char *fmt, ...)
 	msgbuf[0] = '\0';
 	if (fmt) {
 		va_start(va, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 		/* generic message... */
 		/* Note: this code intentionally uses a caller-provided
 		 * format string (we do not get it from configs etc.) */
 		ret = vsnprintf(msgbuf, sizeof(msgbuf), fmt, va);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 		va_end(va);
 
 		if ((ret < 0) || (ret >= (int) sizeof(msgbuf))) {
@@ -3596,21 +3519,7 @@ int upsnotify(upsnotify_state_t state, const char *fmt, ...)
 				}
 				break;
 
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wunreachable-code"
-# pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 				/* All enum cases defined as of the time of coding
 				 * have been covered above. Handle later definitions,
 				 * memory corruptions and buggy inputs below...
@@ -3623,12 +3532,7 @@ int upsnotify(upsnotify_state_t state, const char *fmt, ...)
 					upsdebugx(6, "%s: unknown state but have a status message provided", __func__);
 					ret = (int)msglen;
 				}
-#ifdef __clang__
-# pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 		}
 
 		if ((ret < 0) || (ret >= (int) sizeof(buf))) {
@@ -4051,20 +3955,10 @@ int vsnprintfcat_dynamic(char *dst, size_t size, const char *fmt_dynamic, const 
 	if (!dst || size == 0 || validate_formatting_string(fmt_dynamic, fmt_reference, NUT_DYNAMICFORMATTING_DEBUG_LEVEL) < 0) {
 		return -1;
 	} else {
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 		/* Note: this code intentionally uses a caller-provided format string */
 		return vsnprintfcat(dst, size, fmt_dynamic, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	}
 }
 
@@ -4074,20 +3968,10 @@ int snprintfcat_dynamic(char *dst, size_t size, const char *fmt_dynamic, const c
 	int ret;
 
 	va_start(ap, fmt_reference);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided format string */
 	ret = vsnprintfcat_dynamic(dst, size, fmt_dynamic, fmt_reference, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	return ret;
@@ -4101,20 +3985,10 @@ int vsnprintf_dynamic(char *dst, size_t size, const char *fmt_dynamic, const cha
 	if (validate_formatting_string(fmt_dynamic, fmt_reference, NUT_DYNAMICFORMATTING_DEBUG_LEVEL) < 0) {
 		return -1;
 	} else {
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 		/* Note: this code intentionally uses a caller-provided format string */
 		return vsnprintf(dst, size, fmt_dynamic, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	}
 }
 
@@ -4124,20 +3998,10 @@ int snprintf_dynamic(char *dst, size_t size, const char *fmt_dynamic, const char
 	int ret;
 
 	va_start(ap, fmt_reference);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided format string */
 	ret = vsnprintf_dynamic(dst, size, fmt_dynamic, fmt_reference, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	return ret;
@@ -4154,20 +4018,10 @@ char * mkstr_dynamic(const char *fmt_dynamic, const char *fmt_reference, ...)
 	int ret;
 
 	va_start(ap, fmt_reference);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided format string */
 	ret = vsnprintf_dynamic(buf, sizeof(buf), fmt_dynamic, fmt_reference, ap);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(ap);
 
 	if (ret < 0) {
@@ -4193,15 +4047,7 @@ static void vupslog(int priority, const char *fmt, va_list va, int use_strerror)
 	/* Be pedantic about our limitations */
 	bufsize *= sizeof(char);
 
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 #ifdef __clang__
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wformat-nonliteral"
@@ -4323,9 +4169,7 @@ vupslog_too_long:
 #ifdef __clang__
 #pragma clang diagnostic pop
 #endif
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 
 	if (use_strerror) {
 #ifdef WIN32
@@ -4578,23 +4422,13 @@ void upslog_with_errno(int priority, const char *fmt, ...)
 	va_list va;
 
 	va_start(va, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	vupslog(priority, fmt, va, 1);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(va);
 }
 
@@ -4604,23 +4438,13 @@ void upslogx(int priority, const char *fmt, ...)
 	va_list va;
 
 	va_start(va, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	vupslog(priority, fmt, va, 0);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(va);
 }
 
@@ -4869,23 +4693,13 @@ void s_upsdebug_with_errno(int level, const char *fmt, ...)
 	}
 
 	va_start(va, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	vupslog(LOG_DEBUG, fmt, va, 1);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(va);
 }
 
@@ -4934,23 +4748,13 @@ void s_upsdebugx(int level, const char *fmt, ...)
 	}
 
 	va_start(va, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	vupslog(LOG_DEBUG, fmt, va, 0);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(va);
 }
 
@@ -5126,23 +4930,13 @@ static void vfatal(const char *fmt, va_list va, int use_strerror)
 		}
 	}
 
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	vupslog(LOG_ERR, fmt, va, use_strerror);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 }
 
 void fatal_with_errno(int status, const char *fmt, ...)
@@ -5150,23 +4944,13 @@ void fatal_with_errno(int status, const char *fmt, ...)
 	va_list va;
 
 	va_start(va, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	vfatal(fmt, va, (errno > 0) ? 1 : 0);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(va);
 
 	exit(status);
@@ -5177,23 +4961,13 @@ void fatalx(int status, const char *fmt, ...)
 	va_list va;
 
 	va_start(va, fmt);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 	/* Note: this code intentionally uses a caller-provided
 	 * format string (we should not get it from configs etc.
 	 * or the calling methods should check it against their
 	 * "fmt_dynamic" expectations). */
 	vfatal(fmt, va, 0);
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 	va_end(va);
 
 	exit(status);

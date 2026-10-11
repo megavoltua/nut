@@ -69,6 +69,7 @@
 #	include "powervar-hid.h"
 #	include "salicru-hid.h"
 #	include "tripplite-hid.h"
+#	include "vertiv-hid.h"
 #endif	/* !SHUT_MODE => USB */
 
 /* Reference list of available subdrivers */
@@ -94,6 +95,7 @@ static subdriver_t *subdriver_list[] = {
 	&powervar_subdriver,
 	&salicru_subdriver,
 	&tripplite_subdriver,
+	&vertiv_subdriver,
 #endif	/* !SHUT_MODE => USB */
 	NULL
 };
@@ -2388,21 +2390,7 @@ static bool_t hid_ups_walk(walkmode_t mode)
 
 			break;
 
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wcovered-switch-default"
-# pragma clang diagnostic ignored "-Wunreachable-code"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 			/* All enum cases defined as of the time of coding
 			 * have been covered above. Handle later definitions,
 			 * memory corruptions and buggy inputs below...
@@ -2410,12 +2398,7 @@ static bool_t hid_ups_walk(walkmode_t mode)
 		default:
 			fatalx(EXIT_FAILURE, "hid_ups_walk: unknown update mode!");
 		}	/* end of: switch(mode) */
-#ifdef __clang__
-# pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 
 #if !((defined SHUT_MODE) && SHUT_MODE)
 		/* skip report 0x54 for Tripplite SU3000LCD2UHV due to firmware bug */

@@ -2,7 +2,7 @@
 
    Copyright (C)
 	2016  Emilien Kia <emilien.kia@gmail.com>
-	2020 - 2025  Jim Klimov <jimklimov+nut@gmail.com>
+	2020 - 2026  Jim Klimov <jimklimov+nut@gmail.com>
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -21,42 +21,7 @@
 
 #include "common.h"
 
-/* Current CPPUnit offends the honor of C++98 and maybe later versions */
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_EXIT_TIME_DESTRUCTORS || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_GLOBAL_CONSTRUCTORS || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_DEPRECATED_DECLARATIONS || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_SUGGEST_OVERRIDE_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_SUGGEST_DESTRUCTOR_OVERRIDE_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_WEAK_VTABLES_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_DEPRECATED_DYNAMIC_EXCEPTION_SPEC_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_EXTRA_SEMI_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_OLD_STYLE_CAST_BESIDEFUNC)
-#pragma GCC diagnostic push
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_GLOBAL_CONSTRUCTORS
-#  pragma GCC diagnostic ignored "-Wglobal-constructors"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_EXIT_TIME_DESTRUCTORS
-#  pragma GCC diagnostic ignored "-Wexit-time-destructors"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_DEPRECATED_DECLARATIONS
-#  pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_SUGGEST_OVERRIDE_BESIDEFUNC
-#  pragma GCC diagnostic ignored "-Wsuggest-override"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_SUGGEST_DESTRUCTOR_OVERRIDE_BESIDEFUNC
-#  pragma GCC diagnostic ignored "-Wsuggest-destructor-override"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_WEAK_VTABLES_BESIDEFUNC
-#  pragma GCC diagnostic ignored "-Wweak-vtables"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_DEPRECATED_DYNAMIC_EXCEPTION_SPEC_BESIDEFUNC
-#  pragma GCC diagnostic ignored "-Wdeprecated-dynamic-exception-spec"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_EXTRA_SEMI_BESIDEFUNC
-#  pragma GCC diagnostic ignored "-Wextra-semi"
-# endif
-# ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_OLD_STYLE_CAST_BESIDEFUNC
-#  pragma GCC diagnostic ignored "-Wold-style-cast"
-# endif
-#endif
-#if (defined __clang__) && (defined HAVE_PRAGMA_CLANG_DIAGNOSTIC_IGNORED_DEPRECATED_DECLARATIONS)
-# ifdef HAVE_PRAGMA_CLANG_DIAGNOSTIC_IGNORED_DEPRECATED_DECLARATIONS
-#  pragma clang diagnostic push "-Wdeprecated-declarations"
-# endif
-#endif
+#include "cppunit-warnings.h"
 
 #include <cppunit/extensions/HelperMacros.h>
 
@@ -71,6 +36,7 @@ class NutClientTest : public CppUnit::TestFixture
 
 		CPPUNIT_TEST( test_copy_constructor_dev );
 		CPPUNIT_TEST( test_copy_assignment_dev );
+		CPPUNIT_TEST( test_ssl_context_registry );
 
 		CPPUNIT_TEST( test_copy_constructor_cmd );
 		CPPUNIT_TEST( test_copy_assignment_cmd );
@@ -80,6 +46,10 @@ class NutClientTest : public CppUnit::TestFixture
 
 		CPPUNIT_TEST( test_nutclientstub_dev );
 	CPPUNIT_TEST_SUITE_END();
+
+private:
+	/* Fed by caller via envvars: */
+	int env_NUT_DEBUG_LEVEL = 0;
 
 public:
 	void setUp() override;
@@ -91,6 +61,7 @@ public:
 
 	void test_copy_constructor_dev();
 	void test_copy_assignment_dev();
+	void test_ssl_context_registry();
 
 	void test_copy_constructor_cmd();
 	void test_copy_assignment_cmd();
@@ -122,6 +93,13 @@ strarr stringvector_to_strarr(const std::vector<std::string>& strset);
 
 void NutClientTest::setUp()
 {
+	/* NUT_DEBUG_LEVEL etc. env vars are provided by external test suite driver */
+	char * s;
+
+	s = std::getenv("NUT_DEBUG_LEVEL");
+	if (s) {
+		env_NUT_DEBUG_LEVEL = atoi(s);
+	}
 }
 
 void NutClientTest::tearDown()
@@ -251,6 +229,61 @@ void NutClientTest::test_copy_assignment_dev() {
 	CPPUNIT_ASSERT_EQUAL_MESSAGE(
 		"Failed to assign value of Device Command j by equating to i",
 		i, j);
+}
+
+void NutClientTest::test_ssl_context_registry() {
+	/* Test the C++ API for per-connection SSL context management */
+	nut::TcpClient client;
+
+	/* NOTE: Currently this is a boolean toggle, not a numeric verbosity level */
+	if (env_NUT_DEBUG_LEVEL > 0)
+		std::cerr << "Starting test_ssl_context_registry" << std::endl;
+
+	/* Initially, no custom SSL context should be set */
+	void *initial = client.getSSLContext();
+	CPPUNIT_ASSERT_MESSAGE("Expected no initial SSL context", initial == nullptr);
+
+	/* Without OpenSSL support, Socket::setSSLContext()/getSSLContext() are
+	 * stubs that never store the pointer, so skip the round-trip checks. */
+	if (!(nut::TcpClient::getSslCaps() & UPSCLI_SSL_CAPS_OPENSSL)) {
+		void *test_ctx = reinterpret_cast<void *>(0x1234);
+		CPPUNIT_ASSERT_MESSAGE("Expected no previous SSL context from stub setter",
+			client.setSSLContext(test_ctx) == nullptr);
+		CPPUNIT_ASSERT_MESSAGE("Expected stub getter to never report a stored SSL context",
+			client.getSSLContext() == nullptr);
+		return;
+	}
+
+	if (env_NUT_DEBUG_LEVEL > 0)
+		std::cerr << "Setting custom SSL context" << std::endl;
+
+	/* Set a custom SSL context (using a test pointer) */
+	void *test_ctx = reinterpret_cast<void *>(0x1234);
+	void *previous = client.setSSLContext(test_ctx);
+
+	CPPUNIT_ASSERT_MESSAGE("Expected no previous SSL context on first set", previous == nullptr);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("Expected the registered SSL context to be returned by getter",
+		test_ctx, client.getSSLContext());
+
+	if (env_NUT_DEBUG_LEVEL > 0)
+		std::cerr << "Updating SSL context" << std::endl;
+
+	/* Update the SSL context and verify the old one is returned */
+	void *replacement_ctx = reinterpret_cast<void *>(0x5678);
+	previous = client.setSSLContext(replacement_ctx);
+
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("Expected the previous SSL context to be returned on update",
+		test_ctx, previous);
+	CPPUNIT_ASSERT_EQUAL_MESSAGE("Expected the updated SSL context to be stored",
+		replacement_ctx, client.getSSLContext());
+
+	/* Clear the fake context before the client is destroyed:
+	 * ~Socket() calls SSL_CTX_free() on a non-null context, and
+	 * our test pointers above are not real SSL_CTX objects. */
+	client.setSSLContext(nullptr);
+
+	if (env_NUT_DEBUG_LEVEL > 0)
+		std::cerr << "Finished test_ssl_context_registry" << std::endl;
 }
 
 void NutClientTest::test_copy_constructor_cmd() {
@@ -547,9 +580,4 @@ void NutClientTest::test_nutclientstub_dev() {
 
 } // namespace nut {}
 
-#if (defined __clang__) && (defined HAVE_PRAGMA_CLANG_DIAGNOSTIC_IGNORED_DEPRECATED_DECLARATIONS)
-# pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_EXIT_TIME_DESTRUCTORS || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_GLOBAL_CONSTRUCTORS || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_DEPRECATED_DECLARATIONS || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_SUGGEST_OVERRIDE_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_SUGGEST_DESTRUCTOR_OVERRIDE_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_WEAK_VTABLES_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_DEPRECATED_DYNAMIC_EXCEPTION_SPEC_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_EXTRA_SEMI_BESIDEFUNC || defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_OLD_STYLE_CAST_BESIDEFUNC)
-# pragma GCC diagnostic pop
-#endif
+#include "cppunit-warnings-end.h"

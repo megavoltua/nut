@@ -98,6 +98,7 @@
 #endif
 
 static mib2nut_info_t *mib2nut[] = {
+#ifndef SNMP_UPS_SETOID_TEST
 	&apc_ats,			/* This struct comes from : apc-ats-mib.c */
 	&apc_pdu_rpdu,		/* This struct comes from : apc-pdu-mib.c */
 	&apc_pdu_rpdu2,		/* This struct comes from : apc-pdu-mib.c */
@@ -141,6 +142,7 @@ static mib2nut_info_t *mib2nut[] = {
 	&tripplite_ietf,	/* This struct comes from : ietf-mib.c */
 	&ietf,				/* This struct comes from : ietf-mib.c */
 	/* end of structure. */
+#endif	/* !SNMP_UPS_SETOID_TEST */
 	NULL
 };
 
@@ -1143,15 +1145,7 @@ void nut_snmp_init(const char *type, const char *hostname)
 		/* set the authentication key to a MD5/SHA1 hashed version of our
 		 * passphrase (must be at least 8 characters long) */
 		if (g_snmp_sess.securityLevel != SNMP_SEC_LEVEL_NOAUTH) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-type-limits.h"
 
 /* NOTE: Net-SNMP headers just are weird like that, in the same release:
 net-snmp/types.h:              size_t securityAuthProtoLen;
@@ -1160,9 +1154,7 @@ net-snmp/library/keytools.h:   int    generate_Ku(const oid * hashtype, u_int ha
  * Currently we cast one to another, below (detecting target type could help).
  */
 			if ((uintmax_t)g_snmp_sess.securityAuthProtoLen > UINT_MAX) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-type-limits-end.h"
 				fatalx(EXIT_FAILURE,
 					"Bad SNMPv3 securityAuthProtoLen: %" PRIuSIZE,
 					g_snmp_sess.securityAuthProtoLen);
@@ -1217,20 +1209,10 @@ net-snmp/library/keytools.h:   int    generate_Ku(const oid * hashtype, u_int ha
 		if (g_snmp_sess.securityLevel == SNMP_SEC_LEVEL_AUTHPRIV) {
 			g_snmp_sess.securityPrivKeyLen = USM_PRIV_KU_LEN;
 
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-type-limits.h"
 			/* See comment on generate_Ku() a few dozen lines above */
 			if ((uintmax_t)g_snmp_sess.securityAuthProtoLen > UINT_MAX) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-type-limits-end.h"
 				fatalx(EXIT_FAILURE,
 					"Bad SNMPv3 securityAuthProtoLen: %" PRIuSIZE,
 					g_snmp_sess.securityAuthProtoLen);
@@ -1693,6 +1675,7 @@ bool_t nut_snmp_get_int(const char *OID, long *pval)
 	return do_nut_snmp_get_int(OID, pval, 1);
 }
 
+#ifndef SNMP_UPS_SETOID_TEST
 bool_t nut_snmp_set(const char *OID, char type, const char *value)
 {
 	int status;
@@ -1731,6 +1714,7 @@ bool_t nut_snmp_set(const char *OID, char type, const char *value)
 	snmp_free_pdu(response);
 	return ret;
 }
+#endif	/* !SNMP_UPS_SETOID_TEST */
 
 bool_t nut_snmp_set_str(const char *OID, const char *value)
 {
@@ -3753,19 +3737,9 @@ bool_t su_ups_get(snmp_info_t *su_info_p)
 		if (status == TRUE) {
 			upsdebugx(2, "=> %ld alarms present", value);
 			if (value > 0) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-type-limits.h"
 				if (value > INT_MAX) {
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-type-limits-end.h"
 					upsdebugx(2, "=> truncating alarms present to INT_MAX");
 					value = INT_MAX;
 				}
@@ -3957,6 +3931,7 @@ static int su_setOID(int mode, const char *varname, const char *val)
 	/* normal (default), outlet, or outlet group variable */
 	snmp_info_flags_t vartype = 0;
 	int daisychain_device_number = -1;
+	bool_t is_template_instance = FALSE;
 	/* variable without the potential "device.X" prefix, to find the template */
 	char *tmp_varname = NULL;
 	const char *val_practical = NULL;
@@ -4042,9 +4017,9 @@ static int su_setOID(int mode, const char *varname, const char *val)
 		return (mode==SU_MODE_INSTCMD ? (int)STAT_INSTCMD_INVALID : (int)STAT_SET_INVALID);
 	}
 
-	/* Check if it is outlet / outlet.group, or standard variable */
-	if (strncmp(tmp_varname, "outlet", 6)) {
-		su_info_p = su_find_info(tmp_varname);
+	/* Check for an exact match before treating outlet names as templates */
+	su_info_p = su_find_info(tmp_varname);
+	if (su_info_p || strncmp(tmp_varname, "outlet", 6)) {
 		/* what if e.g. "device.x.contact" is not found as a "contact"? */
 		if (!su_info_p && strcmp(tmp_varname, varname)) {
 			upsdebugx(2,
@@ -4117,9 +4092,14 @@ static int su_setOID(int mode, const char *varname, const char *val)
 		upsdebugx(3, "%s: searching for template\"%s\"", __func__, item_varname);
 		tmp_info_p = su_find_info(item_varname);
 		free(item_varname);
+		if (!tmp_info_p) {
+			free(tmp_varname);
+			return (mode==SU_MODE_INSTCMD ? (int)STAT_INSTCMD_UNKNOWN : (int)STAT_SET_UNKNOWN);
+		}
 
 		/* for an snmp_info_t instance */
 		su_info_p = instantiate_info(tmp_info_p, su_info_p);
+		is_template_instance = TRUE;
 
 		/* check if default value is also a template */
 		if ((su_info_p->dfl != NULL) &&
@@ -4197,7 +4177,8 @@ static int su_setOID(int mode, const char *varname, const char *val)
 		upsdebugx(2, "%s: info element unavailable %s", __func__, varname);
 
 		/* Free template (outlet and outlet.group) */
-		free_info(su_info_p);
+		if (is_template_instance)
+			free_info(su_info_p);
 
 		if (tmp_varname != NULL)
 			free(tmp_varname);
@@ -4216,6 +4197,16 @@ static int su_setOID(int mode, const char *varname, const char *val)
 	}
 
 	val_practical = val ? val : su_info_p->dfl;
+	if (mode == SU_MODE_SETVAR
+	&&  (su_info_p->info_flags & ST_FLAG_RW)
+	&&  (su_info_p->flags & SU_FLAG_ABSENT)
+	&&  su_info_p->OID == NULL
+	) {
+		dstate_setinfo(varname, "%s", val_practical);
+		retval = STAT_SET_HANDLED;
+		goto cleanup;
+	}
+
 	if (su_info_p->info_flags & ST_FLAG_STRING) {
 		status = nut_snmp_set_str(su_info_p->OID, val_practical);
 	}
@@ -4279,8 +4270,9 @@ static int su_setOID(int mode, const char *varname, const char *val)
 		}
 	}
 
+cleanup:
 	/* Free template (outlet and outlet.group) */
-	if (!strncmp(tmp_varname, "outlet", 6))
+	if (is_template_instance)
 		free_info(su_info_p);
 	free(tmp_varname);
 

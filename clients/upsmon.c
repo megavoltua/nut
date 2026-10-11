@@ -42,6 +42,9 @@
 #ifdef HAVE_STDARG_H
 # include <stdarg.h>
 #endif
+#ifdef HAVE_SYS_STDARG_H
+# include <sys/stdarg.h>
+#endif
 
 /* name-swap in libupsclient consumer to simplify the look of code base */
 #define builtin_setproctag(x)	setproctag(x)
@@ -144,12 +147,18 @@ static	int	overdurationtime = -1;
 static	char	*run_as_user = NULL;
 
 	/* SSL details - where to find certs, whether to use them */
-static	char	*certpath = NULL;	/* NSS database or OpenSSL CA collection, a directory */
-static	char	*certname = NULL;	/* Client cert subject name (optionally validate that we got the right one) */
-static	char	*certpasswd = NULL;	/* Private key password */
-static	char	*certfile = NULL;	/* OpenSSL client cert, a PEM file */
-static	int	certverify = 0;		/* don't verify by default */
-static	int	forcessl = 0;		/* don't require ssl by default */
+static	char	*authconf_configured = NULL;	/* location of a nutauth.conf file, if requested via upsmon.conf */
+static	upscli_authconf_t	*ac_default = NULL;
+
+	/* Legacy SSL details (before AUTHCONF was introduced),
+	 * now those keywords populate "global defaults" entry
+	 * in the AUTHCONF list, and are not used directly. */
+/*static	char	*certpath = NULL;	// NSS database or OpenSSL CA collection, a directory */
+/*static	char	*certname = NULL;	// Client cert subject name (optionally validate that we got the right one) */
+/*static	char	*certpasswd = NULL;	// Private key password */
+/*static	char	*certfile = NULL;	// OpenSSL client cert, a PEM file */
+/*static	int	certverify = 0;		// don't verify by default */
+/*static	int	forcessl = 0;		// don't require ssl by default */
 
 static	int	shutdownexitdelay = 0;	/* by default doshutdown() exits immediately */
 static	int	userfsd = 0, pipefd[2];
@@ -183,6 +192,15 @@ static	sigset_t nut_upsmon_sigmask;
  */
 static	TYPE_FD	sleep_inhibitor_fd = ERROR_FD;
 static	int	sleep_inhibitor_status = -2;
+
+/* Track whether a wake-up was expected (announced suspend) or
+ * was inferred from an unexpected time jump. This helps avoid
+ * reporting SUSPEND_FINISHED for unannounced clock adjustments
+ * (e.g. RTC invalid at boot and NTP correction).
+ */
+static	int	wake_expected = 0;              /* set when NOTIFY_SUSPEND_STARTING was sent */
+static	int	unexpected_timejump = 0;        /* set when we infer a time jump without prior suspend */
+static	char	unexpected_timejump_msg[SMALLBUF];  /* optional detail text about time jump */
 
 /* Users can pass a -D[...] option to enable debugging.
  * For the service tracing purposes, also the upsmon.conf
@@ -443,15 +461,7 @@ static void do_notify(const utype_t *ups, unsigned int ntype, const char *extra)
 				__func__, ntype,
 				notifylist[i].name);
 
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic ignored "-Wformat-nonliteral"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_FORMAT_SECURITY
-#pragma GCC diagnostic ignored "-Wformat-security"
-#endif
+#include "nut-pragmas-format-nonliteral.h"
 			if (s) {
 				/* FIXME: Check user inputs to rule out
 				 *  any *OTHER* formatting characters.
@@ -481,9 +491,7 @@ static void do_notify(const utype_t *ups, unsigned int ntype, const char *extra)
 				 * SUSPEND_STARTING, SUSPEND_FINISHED ... */
 				snprintf(msg, sizeof(msg), "%s", msgfmt);
 			}
-#ifdef HAVE_PRAGMAS_FOR_GCC_DIAGNOSTIC_IGNORED_FORMAT_NONLITERAL
-#pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-format-nonliteral-end.h"
 			notify(msg, notifylist[i].flags, notifylist[i].name,
 				upsname);
 
@@ -2548,29 +2556,37 @@ static int parse_conf_arg(size_t numargs, char **arg)
 		return 1;
 	}
 
+	/* AUTHCONF (<path-to-file> | "default" | "none") */
+	if (!strcmp(arg[0], "AUTHCONF")) {
+		free(authconf_configured);
+		authconf_configured = xstrdup(arg[1]);
+		/* NOTE: We parse it after reading the default/legacy keywords, if any */
+		return 1;
+	}
+
 	/* CERTPATH <path-to-dir> */
 	if (!strcmp(arg[0], "CERTPATH")) {
-		free(certpath);
-		certpath = xstrdup(arg[1]);
+		free(ac_default->certpath);
+		ac_default->certpath = xstrdup(arg[1]);
 		return 1;
 	}
 
 	/* CERTFILE <path-to-PEM-file> */
 	if (!strcmp(arg[0], "CERTFILE")) {
-		free(certfile);
-		certfile = xstrdup(arg[1]);
+		free(ac_default->certfile);
+		ac_default->certfile = xstrdup(arg[1]);
 		return 1;
 	}
 
 	/* CERTVERIFY (0|1) */
 	if (!strcmp(arg[0], "CERTVERIFY")) {
-		certverify = atoi(arg[1]);
+		ac_default->certverify = atoi(arg[1]);
 		return 1;
 	}
 
 	/* FORCESSL (0|1) */
 	if (!strcmp(arg[0], "FORCESSL")) {
-		forcessl = atoi(arg[1]);
+		ac_default->forcessl = atoi(arg[1]);
 		return 1;
 	}
 
@@ -2610,10 +2626,10 @@ static int parse_conf_arg(size_t numargs, char **arg)
 
 	/* CERTIDENT <name> <passwd> */
 	if (!strcmp(arg[0], "CERTIDENT")) {
-		free(certname);
-		certname = xstrdup(arg[1]);
-		free(certpasswd);
-		certpasswd = xstrdup(arg[2]);
+		free(ac_default->certident);
+		ac_default->certident = xstrdup(arg[1]);
+		free(ac_default->certpasswd);
+		ac_default->certpasswd = xstrdup(arg[2]);
 		return 1;
 	}
 
@@ -2623,12 +2639,32 @@ static int parse_conf_arg(size_t numargs, char **arg)
 
 	/* CERTHOST <hostname> <certname> (0|1) (0|1) */
 	if (!strcmp(arg[0], "CERTHOST")) {
+		char	*norm_sectname = NULL, *norm_host = NULL, *norm_port = NULL;
+		upscli_authconf_t	*ac_host = NULL;
+
+		if (upscli_split_authconf_section(arg[1], &norm_sectname, NULL, NULL, &norm_host, &norm_port) >= 0
+			&& norm_host && norm_port && *norm_host && *norm_port
+		) {
+			ac_host = upscli_get_authconf_item(NULL, norm_host, norm_port, 1);
+			if (!ac_host || ac_host == ac_default)
+				fatalx(EXIT_FAILURE, "Fatal error: unable to get host-specific authconf entry");
+
+			free(ac_host->certhost);
+			ac_host->certhost = xstrdup(arg[2]);
+			ac_host->certverify = atoi(arg[3]);
+			ac_host->forcessl = atoi(arg[4]);
+		}
+
+		/* Maybe a repeat that ends in a quick no-op, but better be sure */
 		upscli_add_host_cert(arg[1], arg[2], atoi(arg[3]), atoi(arg[4]));
+		free(norm_sectname);
+		free(norm_host);
+		free(norm_port);
+
 		return 1;
 	}
 
 	if (!strcmp(arg[0], "MONITOR")) {
-
 		/* original style: no username (only 5 args) */
 		if (numargs == 5) {
 			upslogx(LOG_ERR, "Unable to use old-style MONITOR line without a username");
@@ -2638,6 +2674,8 @@ static int parse_conf_arg(size_t numargs, char **arg)
 		}
 
 		/* <sys> <pwrval> <user> <pw> ("primary"|"master" | "secondary"|"slave") */
+		/* TOTHINK: save into authconf list as "[user@host{:port}]" sections?
+		 *  ...Delay until after defaults and CERTHOSTs are all known? */
 		addups(reload_flag, arg[1], arg[2], arg[3], arg[4], arg[5]);
 		return 1;
 	}
@@ -2706,6 +2744,14 @@ static void loadconfig(void)
 				ups = (utype_t *)ups->next;
 			}
 		}
+
+		/* TOTHINK: Close UPSes above, call this to close any active SSL
+		 * contexts, and forget old SSL-related settings, before reload?
+		 * Otherwise we pile up new entries but never forget old ones?
+		 * And do not reload any new data for nutauth.conf (default or
+		 * AUTHCONF-provided) file contents...
+		 */
+		/*upscli_cleanup();*/
 	}
 
 	while (pconf_file_next(&ctx)) {
@@ -2759,6 +2805,29 @@ static void loadconfig(void)
 			upslogx(LOG_INFO,
 				"Applying POLLFAIL_LOG_THROTTLE_MAX %d from upsmon.conf",
 				pollfail_log_throttle_max);
+		}
+	}
+
+	if (reload_flag == 0) {
+		/* FIXME: See also comment above, to support reloading AUTHCONF */
+		/* NOTE: If there were legacy keywords in upsmon.conf,
+		 * they would have been handled earlier to populate defaults
+		 * and possibly CERTHOST-specific entries in the authconf list;
+		 * loading a file now would at best populate any missing points.
+		 */
+		if (authconf_configured) {
+			if (!strcmp(authconf_configured, "none")) {
+				upsdebugx(1, "Using AUTHCONF='%s': skipping auth config", authconf_configured);
+			} else if (!strcmp(authconf_configured, "default")) {
+				upsdebugx(1, "Using AUTHCONF='%s': require a user or system provided file", authconf_configured);
+				upscli_read_authconf_file(NULL, 1, -1);
+			} else {
+				upsdebugx(1, "Using configured auth config file: %s", authconf_configured);
+				upscli_read_authconf_file(authconf_configured, 1, -1);
+			}
+		} else {
+			upsdebugx(1, "Using best-effort auth config detection");
+			upscli_read_authconf_file(NULL, 0, 1);
 		}
 	}
 
@@ -2876,14 +2945,8 @@ static void upsmon_cleanup(void)
 	free(configfile);
 	configfile = NULL;
 
-	free(certpath);
-	certpath = NULL;
-	free(certname);
-	certname = NULL;
-	free(certpasswd);
-	certpasswd = NULL;
-	free(certfile);
-	certfile = NULL;
+	free(authconf_configured);
+	authconf_configured = NULL;
 
 	if (shutdowncmd_argv) {
 		for (i = 0; i < shutdowncmd_argc; i++) {
@@ -2986,13 +3049,25 @@ static void update_crittimer(utype_t *ups)
 /* handle connecting to upsd, plus get SSL going too if possible */
 static int try_connect(utype_t *ups)
 {
-	int	flags = 0, ret;
+	int	flags = 0, ret, forcessl = 0, certverify = 0;
+	char str_port[16], *certpath = NULL;
 
-	upsdebugx(1, "Trying to connect to UPS [%s]", ups->sys);
+	upscli_authconf_t *ac = upscli_get_authconf_item(NULL, ups->hostname,
+		snprintf(str_port, sizeof(str_port), "%" PRIu16, ups->port) > 0 ? str_port : NULL, 1);
+	upsdebugx(3, "%s: %s authconf entry for UPS [%s] at [%s:%s]",
+		__func__, ac ? "Found" : "No", ups->sys, ups->hostname, str_port);
+
+	upsdebugx(1, "%s: Trying to connect to UPS [%s]", __func__, ups->sys);
 
 	clearflag(&ups->status, ST_CLICONNECTED);
 
 	/* force it if configured that way, just try it otherwise */
+	if (ac) {
+		forcessl = ac->forcessl;
+		certverify = ac->certverify;
+		certpath = ac->certpath;
+	}
+
 	if (forcessl == 1)
 		flags |= UPSCLI_CONN_REQSSL;
 	else
@@ -3030,6 +3105,8 @@ static int try_connect(utype_t *ups)
 		ups_is_gone(ups);
 		return 0;
 	}
+	upsdebugx(3, "%s: UPS [%s]: connect succeeded",
+		__func__, ups->sys);
 
 	/* we're definitely connected now */
 	setflag(&ups->status, ST_CLICONNECTED);
@@ -4223,6 +4300,18 @@ int main(int argc, char *argv[])
 		}
 	}
 
+	/* Make sure default entry is created even if we did not see any
+	 * CERT* or AUTHCONF lines yet */
+	ac_default = upscli_get_authconf_item(NULL, NULL, NULL, 1);
+	if (!ac_default)
+		fatalx(EXIT_FAILURE, "Fatal error: unable to get default authconf entry");
+	free(ac_default->section);
+	ac_default->section = NULL;	/* no section name for default entry */
+	upsdebugx(1, "Empty default authconf section created");
+	if (nut_debug_level > 4) {
+		upscli_dump_authconf_list(NULL, 1, 1);
+	}
+
 	loadconfig();
 
 	/* CLI debug level can not be smaller than debug_min specified
@@ -4235,6 +4324,11 @@ int main(int argc, char *argv[])
 	}
 	upsdebugx(1, "debug level is '%d'", nut_debug_level);
 
+	if (nut_debug_level > 4) {
+		upsdebugx(5, "Collected AUTHCONF entries:");
+		upscli_dump_authconf_list(NULL, 0, 0);
+	}
+
 	if (checking_flag)
 		exit(check_pdflag());
 
@@ -4245,6 +4339,7 @@ int main(int argc, char *argv[])
 			: "!");
 		fflush(stdout);
 	} else {
+		/* NOTE: shutdowncmd_concat is constructed without built-in quotes for reporting */
 		upsdebugx(1, "will use a shutdown command (SHUTDOWNCMD): '%s'",
 			NUT_STRARG(shutdowncmd_concat));
 	}
@@ -4253,7 +4348,8 @@ int main(int argc, char *argv[])
 		printf("Warning: no custom notification command defined, just so you know\n");
 		fflush(stdout);
 	} else {
-		upsdebugx(1, "will use custom notification command (NOTIFYCMD): '%s'",
+		/* NOTE: notifycmd_concat is constructed with built-in quotes for reporting */
+		upsdebugx(1, "will use custom notification command (NOTIFYCMD): %s",
 			NUT_STRARG(notifycmd_concat));
 	}
 
@@ -4297,15 +4393,6 @@ int main(int argc, char *argv[])
 #endif	/* !WIN32 */
 
 		writepid(prog);
-	}
-
-	if (upscli_init2(certverify, certpath, certname, certpasswd, certfile) < 0) {
-		if (certverify || certpath || certname || certpasswd || certfile) {
-			upslogx(LOG_WARNING, "Failed upscli_init2() while SSL was required");
-			upsnotify(NOTIFY_STATE_STOPPING, "Failed upscli_init2() while SSL was required");
-			exit(EXIT_FAILURE);
-		}
-		upslogx(LOG_WARNING, "Failed upscli_init2() but SSL ability was not required");
 	}
 
 	/* prep our signal handlers */
@@ -4373,6 +4460,7 @@ int main(int argc, char *argv[])
 		if (sleep_inhibitor_status == 1) {
 			/* Preparing for sleep */
 			do_notify(NULL, NOTIFY_SUSPEND_STARTING, NULL);
+			wake_expected = 1;
 			upslogx(LOG_INFO, "%s: Processing OS going to sleep", prog);
 			Uninhibit(&sleep_inhibitor_fd);
 
@@ -4419,7 +4507,23 @@ int main(int argc, char *argv[])
 				time(&ttNow);
 				dt = difftimeval(now, prevstart);
 
-				do_notify(NULL, NOTIFY_SUSPEND_FINISHED, NULL);
+				/* If we had no prior NOTIFY_SUSPEND_STARTING and instead
+				 * inferred a wake-up due to a time jump, avoid reporting
+				 * SUSPEND_FINISHED which implies an expected sleep.
+				 */
+				if (unexpected_timejump) {
+					if (unexpected_timejump_msg[0] != '\0') {
+						/* Delay-loop detected jump (no earlier notify) */
+						do_notify(NULL, NOTIFY_SUSPEND_TIMEJUMP_UNEXPECTED, unexpected_timejump_msg);
+					}
+					/* Otherwise, the general-purpose handler already notified */
+				} else if (wake_expected) {
+					do_notify(NULL, NOTIFY_SUSPEND_FINISHED, NULL);
+				}
+				/* Clear flags regardless */
+				wake_expected = 0;
+				unexpected_timejump = 0;
+				unexpected_timejump_msg[0] = '\0';
 				upslogx(LOG_INFO, "%s: Processing OS wake-up after sleep; %.06f seconds since previous loop cycle start", prog, dt);
 				upsnotify(NOTIFY_STATE_WATCHDOG, NULL);
 
@@ -4505,11 +4609,16 @@ int main(int argc, char *argv[])
 					dt, sleepval, sleep_inhibitor_status);
 				if (dt > (sleepval + sleep_overhead_tolerance) || difftimeval(now, prev) > sleep_overhead_tolerance) {
 					upslogx(LOG_WARNING, "It seems we have slept without warning or the system clock was changed (while in delay between main loop cycles) by %.06f seconds", dt);
-					if (sleep_inhibitor_status < 0)
+					if (sleep_inhibitor_status < 0) {
 						sleep_inhibitor_status = 0;	/* behave as woken up */
+						unexpected_timejump = 1;
+						snprintf(unexpected_timejump_msg, sizeof(unexpected_timejump_msg), "%.06f seconds", dt);
+					}
 				} else if (dt < 0) {
 					upslogx(LOG_WARNING, "It seems the system clock was changed into the past (while in delay between main loop cycles) by %.06f seconds", dt);
 					sleep_inhibitor_status = 0;	/* behave as woken up */
+					unexpected_timejump = 1;
+					snprintf(unexpected_timejump_msg, sizeof(unexpected_timejump_msg), "%.06f seconds", dt);
 				}
 			}
 
@@ -4609,6 +4718,9 @@ int main(int argc, char *argv[])
 			snprintf(dtstr, sizeof(dtstr), "%.06f seconds", dt);
 			upslogx(LOG_WARNING, "It seems we have slept without warning or the system clock was changed by %s", dtstr);
 			do_notify(ups, NOTIFY_SUSPEND_TIMEJUMP_UNEXPECTED, dtstr);
+			/* Mark for subsequent loop to avoid SUSPEND_FINISHED */
+			unexpected_timejump = 1;
+			unexpected_timejump_msg[0] = '\0'; /* already notified */
 			if (sleep_inhibitor_status < 0)
 				sleep_inhibitor_status = 0;	/* behave as woken up */
 		} else if (dt < 0) {
@@ -4616,6 +4728,9 @@ int main(int argc, char *argv[])
 			snprintf(dtstr, sizeof(dtstr), "%.06f seconds", dt);
 			upslogx(LOG_WARNING, "It seems the system clock was changed into the past by %s", dtstr);
 			do_notify(ups, NOTIFY_SUSPEND_TIMEJUMP_UNEXPECTED, dtstr);
+			/* Mark for subsequent loop to avoid SUSPEND_FINISHED */
+			unexpected_timejump = 1;
+			unexpected_timejump_msg[0] = '\0'; /* already notified */
 			if (sleep_inhibitor_status < 0)
 				sleep_inhibitor_status = 0;	/* behave as woken up */
 		}

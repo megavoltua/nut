@@ -162,12 +162,21 @@ static int parse_boolean(char *arg, int *result)
 	return 0;
 }
 
-/* return 1 if usable, 0 if not */
+/* Return 1 if usable, 0 if not, -1 for an invalid LISTEN address. */
 static int parse_upsd_conf_args(size_t numargs, char **arg)
 {
+	int n, starts_with_digit;
+	long l;
+
 	/* everything below here uses up through arg[1] */
 	if (numargs < 2)
 		return 0;
+
+	/* Preserve rejection of signs and leading whitespace for numeric options.
+	 * str_to_int/long also check the rest of the value and its range, while
+	 * allowing trailing whitespace as atoi/atol did. Use temporary values
+	 * because the conversion helpers clear their output on failure. */
+	starts_with_digit = (arg[1][0] >= '0' && arg[1][0] <= '9');
 
 	/* DEBUG_MIN (NUM) */
 	/* debug_min (NUM) also acceptable, to be on par with ups.conf */
@@ -183,24 +192,24 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 
 	/* MAXAGE <seconds> */
 	if (!strcmp(arg[0], "MAXAGE")) {
-		if (isdigit((size_t)arg[1][0])) {
-			maxage = atoi(arg[1]);
+		if (starts_with_digit && str_to_int(arg[1], &n, 10)) {
+			maxage = n;
 			return 1;
 		}
 		else {
-			upslogx(LOG_ERR, "MAXAGE has non numeric value (%s)!", arg[1]);
+			upslogx(LOG_ERR, "MAXAGE has invalid or out of range numeric value (%s)!", arg[1]);
 			return 0;
 		}
 	}
 
 	/* TRACKINGDELAY <seconds> */
 	if (!strcmp(arg[0], "TRACKINGDELAY")) {
-		if (isdigit((size_t)arg[1][0])) {
-			tracking_delay = atoi(arg[1]);
+		if (starts_with_digit && str_to_int(arg[1], &n, 10)) {
+			tracking_delay = n;
 			return 1;
 		}
 		else {
-			upslogx(LOG_ERR, "TRACKINGDELAY has non numeric value (%s)!", arg[1]);
+			upslogx(LOG_ERR, "TRACKINGDELAY has invalid or out of range numeric value (%s)!", arg[1]);
 			return 0;
 		}
 	}
@@ -233,13 +242,14 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 
 	/* MAXCONN <connections> */
 	if (!strcmp(arg[0], "MAXCONN")) {
-		if (isdigit((size_t)arg[1][0])) {
-			/* FIXME: Check for overflows (and int size of nfds_t vs. long) - see get_max_pid_t() for example */
-			maxconn = (nfds_t)atol(arg[1]);
+		if (starts_with_digit && str_to_long(arg[1], &l, 10)
+		&& (uintmax_t)(nfds_t)l == (uintmax_t)l
+		) {
+			maxconn = (nfds_t)l;
 			return 1;
 		}
 		else {
-			upslogx(LOG_ERR, "MAXCONN has non numeric value (%s)!", arg[1]);
+			upslogx(LOG_ERR, "MAXCONN has invalid or out of range numeric value (%s)!", arg[1]);
 			return 0;
 		}
 	}
@@ -307,8 +317,8 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 # ifdef WITH_CLIENT_CERTIFICATE_VALIDATION
 	/* CERTREQUEST (0 | 1 | 2) */
 	if (!strcmp(arg[0], "CERTREQUEST")) {
-		if (isdigit((size_t)arg[1][0])) {
-			certrequest = atoi(arg[1]);
+		if (starts_with_digit && str_to_int(arg[1], &n, 10)) {
+			certrequest = n;
 			return 1;
 		}
 		else {
@@ -324,7 +334,7 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 				certrequest = NETSSL_CERTREQ_REQUIRE;	/* 2 */
 				return 1;
 			}
-			upslogx(LOG_ERR, "CERTREQUEST has non numeric value (%s)!", arg[1]);
+			upslogx(LOG_ERR, "CERTREQUEST has invalid or out of range value (%s)!", arg[1]);
 			return 0;
 		}
 	}
@@ -370,10 +380,13 @@ static int parse_upsd_conf_args(size_t numargs, char **arg)
 
 	/* LISTEN <address> [<port>] */
 	if (!strcmp(arg[0], "LISTEN")) {
-		if (numargs < 3)
-			listen_add(arg[1], string_const(NUT_PORT));
-		else
-			listen_add(arg[1], arg[2]);
+		char *address, *port;
+		if (!str_split_listen(arg[1], &address, &port) || (port && numargs >= 3)) {
+			upslogx(LOG_ERR, "Invalid LISTEN address or duplicate port: %s", arg[1]);
+			return -1;
+		}
+		/* Preserve the existing separate port syntax and its validation. */
+		listen_add(address, numargs >= 3 ? arg[2] : (port ? port : string_const(NUT_PORT)));
 		return 1;
 	}
 
@@ -413,7 +426,7 @@ void load_upsdconf(int reloading)
 {
 	char	fn[NUT_PATH_MAX];
 	PCONF_CTX_t	ctx;
-	int	numerrors = 0;
+	int	numerrors = 0, listen_errors = 0;
 
 	snprintf(fn, sizeof(fn), "%s/upsd.conf", confpath());
 
@@ -444,6 +457,7 @@ retry:
 	}
 
 	while (pconf_file_next(&ctx)) {
+		int parsed;
 		if (pconf_parse_error(&ctx)) {
 			upslogx(LOG_ERR, "Parse error: %s:%d: %s",
 				fn, ctx.linenum, ctx.errmsg);
@@ -454,7 +468,11 @@ retry:
 		if (ctx.numargs < 1)
 			continue;
 
-		if (!parse_upsd_conf_args(ctx.numargs, ctx.arglist)) {
+		parsed = parse_upsd_conf_args(ctx.numargs, ctx.arglist);
+		if (parsed < 0) {
+			listen_errors++;
+		}
+		if (parsed <= 0) {
 			unsigned int	i;
 			char	errmsg[SMALLBUF];
 
@@ -495,6 +513,12 @@ retry:
 	}
 
 	pconf_finish(&ctx);
+	if (listen_errors && !reloading) {
+		/* Do not fall back to defaults or rely on getaddrinfo() rejecting
+		 * malformed input: Windows may accept it and use the default port.
+		 * Reload never changes listeners, including malformed new entries. */
+		fatalx(EXIT_FAILURE, "Invalid LISTEN configuration");
+	}
 }
 
 static int load_upsconf(int reloading) {

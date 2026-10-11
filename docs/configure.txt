@@ -13,7 +13,8 @@ As many other projects relying on GNU autotools for build recipe automation,
 NUT sources deliver a `configure` script which is used to set up numerous
 nuances relevant for your build of the project.  Most of the configuration
 requirements are passed by `--with-something` or `--enable-something` options
-(allegedly, not always used consistently with autotools naming recommendations),
+(allegedly, not always used consistently with autotools naming recommendations
+for `--with-DEPENDENCY_PACKAGE` and `--enable-PROJECT_FEATURE` semantics),
 and with environment variables like `CFLAGS` typically also passed as command
 line options.
 
@@ -534,9 +535,10 @@ of Python does not matter and the un-versioned `PYTHON` value is substituted
 into files as the script shebang, used to find the `site-packages` location,
 etc.
 
-One exception is generation of NUT-Monitor GUI application, being separated
-for `NUT-Monitor-py2gtk2`, `NUT-Monitor-py3qt5`, `NUT-Monitor-py3qt6` due
-to further backend platform technical differences -- these build products
+One exception is generation of NUT-Monitor GUI application. It provides a
+Python 2/GTK2 implementation and one shared Python 3 implementation for the
+Qt5 and Qt6 backends, exposed as `NUT-Monitor-py2gtk2`,
+`NUT-Monitor-py3qt5` and `NUT-Monitor-py3qt6`. These build products
 specifically use `PYTHON2` and `PYTHON3` substitutions. They may also be
 co-installed on the same system. A dispatcher shell script `NUT-Monitor` is
 used to launch the preferred (newest) or the only existing implementation.
@@ -817,13 +819,6 @@ Enable libwrap (tcp-wrappers) support.
 
 Refer to linkman:upsd[8] man page for more information.
 
-Networking IPv6
-~~~~~~~~~~~~~~~
-
-	--with-ipv6 (default: auto-detect)
-
-Enable IPv6 support.
-
 AVAHI/mDNS
 ~~~~~~~~~~
 
@@ -1100,8 +1095,8 @@ to include the package name, e.g. set it to `<exec_prefix>/libexec/nut`.
 
 Where to install pkg-config `*.pc` files. This option only has an
 effect if `--with-dev` is selected, and causes a pkg-config file to
-be installed in the named location. The default is
-`<exec_prefix>/pkgconfig`.
+be installed in the named location. The default is `<libdir>/pkgconfig`,
+normally `<exec_prefix>/lib/pkgconfig`.
 
 Use `--without-pkgconfig-dir` to disable this feature altogether.
 

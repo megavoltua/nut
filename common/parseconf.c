@@ -83,7 +83,12 @@
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
-#include <stdarg.h>
+#ifdef HAVE_STDARG_H
+# include <stdarg.h>
+#endif
+#ifdef HAVE_SYS_STDARG_H
+# include <sys/stdarg.h>
+#endif
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -278,26 +283,19 @@ static int findeol(PCONF_CTX_t *ctx)
 	return STATE_FINDEOL;
 }
 
-/* set up the error reporting details */
+#if 0
+/* Retained for future syntax errors; quoted hashes are now valid. */
 static void pconf_seterr(PCONF_CTX_t *ctx, const char *errmsg)
 {
 	snprintf(ctx->errmsg, PCONF_ERR_LEN, "%s", errmsg);
 
 	ctx->error = 1;
 }
+#endif
 
 /* quote characters inside a word bounded by "quotes" */
 static int quotecollect(PCONF_CTX_t *ctx)
 {
-	/* user is trying to break us */
-	if (ctx->ch == '#') {
-		pconf_seterr(ctx, "Unbalanced word due to unescaped # in quotes");
-		endofword(ctx);
-
-		/* this makes us drop all the way out of the caller */
-		return STATE_PARSEERR;
-	}
-
 	/* another " means we're done with this word */
 	if (ctx->ch == '"') {
 		endofword(ctx);

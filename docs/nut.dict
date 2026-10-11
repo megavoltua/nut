@@ -1,4 +1,4 @@
-personal_ws-1.1 en 3807 utf-8
+personal_ws-1.1 en 3892 utf-8
 AAC
 AAS
 ABI
@@ -32,6 +32,7 @@ APM
 AQ
 ARB
 ARG
+ARGTYPES
 ARS
 ASN
 ATEK
@@ -66,6 +67,7 @@ Antonino
 Apodaca
 AppData
 AppVeyor
+ApparentPower
 ArgumentList
 Arjen
 Arkadiusz
@@ -151,6 +153,7 @@ Bourne
 Boutell's
 Brabec
 Breiland
+Brogaard
 Brownell
 Bs
 BuildBot
@@ -189,6 +192,7 @@ COMLI
 COMMBAD
 COMMFAULT
 COMMOK
+CONFIGSCRIPT
 CONFILE
 CONTEXTs
 CPAN
@@ -340,6 +344,8 @@ EG
 EINVAL
 EL
 ELCD
+ELCDSL
+ELCDSXL
 EMI
 EMP
 EMPDT
@@ -443,8 +449,10 @@ GCCVER
 GDBus
 GES
 GETADDRINFO
+GETNAMEINFO
 GETPID
 GHA
+GHSA
 GID
 GIO
 GITREV
@@ -551,12 +559,14 @@ IDEN
 IDEs
 IDentifiers
 IFBETWEEN
+IFELSE
 IFEQ
 IFF
 IFSUPP
 IGN
 IIS
 IMG
+IMPLEM
 INADDR
 INFOSIZE
 INIGO
@@ -571,6 +581,7 @@ INVOLT
 IOPlatformPluginFamily
 IPAR
 IPC
+IPHLPAPI
 IPM
 IPP
 IPSS
@@ -661,9 +672,11 @@ LGTM
 LH
 LIBGD
 LIBGPIO
+LIBIPMI
 LIBNEON
 LIBNETSNMP
 LIBOPENSSL
+LIBOPTS
 LIBPOWERMAN
 LIBSSL
 LIBUPSCLI
@@ -783,6 +796,7 @@ MicroFerrups
 Microline
 Micropower
 Microsol
+Microtek
 Mikiewicz
 Milkov
 MinGW
@@ -813,6 +827,7 @@ NBF
 NConfigs
 NDE
 NEP
+NETLIBS
 NETVER
 NETVERSION
 NFS
@@ -875,6 +890,7 @@ NetXML
 Netman
 NetworkUPSTools
 Neus
+Nicolai
 Niels
 Niemueller
 Niklas
@@ -902,6 +918,7 @@ OMNIVS
 OMNIVSINT
 OMRON
 OMRON's
+ONELEVEL
 ONF
 ONV
 OO
@@ -978,8 +995,11 @@ PPD
 PPDn
 PPDnnn
 PPP
+PPPP
 PR
 PR'ed
+PREREQ
+PRG
 PRIuSIZE
 PROCNAME
 PROGRA
@@ -1030,6 +1050,7 @@ PiJuice
 PiNUT
 Plesser
 PnP
+PoC
 Poettering
 Pohle
 PointBre
@@ -1039,6 +1060,7 @@ Potrans
 Poush
 PowerAlert
 PowerCOM
+PowerChute
 PowerCom
 PowerES
 PowerGuide
@@ -1054,10 +1076,10 @@ PowerPC
 PowerPS
 PowerPal
 PowerPanel
-PowerChute
 PowerShare
 PowerShell
 PowerShield
+PowerSummary
 PowerSure
 PowerSystemError
 PowerTech
@@ -1110,6 +1132,7 @@ QOL
 QP
 QPAR
 QPD
+QPI
 QQ
 QQQ
 QRI
@@ -1193,6 +1216,7 @@ Ryabov
 Rzepecki
 SAI
 SASU
+SCL
 SCM
 SCO
 SCR
@@ -1230,6 +1254,7 @@ SIGTERM
 SIGURG
 SIGUSR
 SIGWINCH
+SINGLEQUOTE
 SKP
 SKU
 SL
@@ -1244,12 +1269,16 @@ SNMPv
 SNR
 SOCK
 SOCKADDR
+SOCKETLIB
 SOCKLEN
 SOCOMECUPS
 SOFF
+SOFILE
 SOG
 SOLA
 SOMECO
+SONAME
+SOPATH
 SOURCEMODE
 SOV
 SPARC
@@ -1276,6 +1305,7 @@ STO
 STP
 STRARG
 SUBDIRS
+SUBST
 SUNWlibusbugen
 SUNWugen
 SUNWusb
@@ -1290,6 +1320,7 @@ SYSMAXCONN
 SafeNet
 Salicru
 Salvia
+Santak
 Santinoli
 Savia
 Sawatzky
@@ -1378,6 +1409,7 @@ TBD
 TBR
 TCIFLUSH
 TCIOFLUSH
+TCPIP
 TCSANOW
 TEMPC
 TEMPF
@@ -1500,6 +1532,7 @@ Ut
 V'ger
 VALIGN
 VARDESC
+VARNUM
 VARTYPE
 VENDORNAME
 VER
@@ -1522,6 +1555,7 @@ VSN
 VTIME
 VV
 VVV
+VVVV
 Vaclav
 Valderen
 Vdc
@@ -1541,7 +1575,9 @@ WARNFATAL
 WARNOPT
 WCH
 WELI
+WH
 WHAD
+WINSOCK
 WIP
 WIPO
 WMNut
@@ -1561,6 +1597,7 @@ WebFreak
 Werror
 Weverything
 Wextra
+Wformat
 WhizBang
 WiX
 Wikipedia
@@ -1571,7 +1608,10 @@ WinPower
 WinUSB
 Wireshark
 Wl
+Wno
 Wrede
+Wtautological
+Wtype
 Wunreachable
 XAU
 XC
@@ -1595,6 +1635,7 @@ Xlinker
 Xpert
 Xups
 YDN
+YESNO
 YQ
 YV
 YY
@@ -1666,6 +1707,7 @@ altroot
 altroots
 amd
 anded
+ansi
 antivirus
 aon
 ap
@@ -1690,6 +1732,7 @@ arg
 argc
 argp
 args
+argtypes
 argv
 armac
 armel
@@ -1777,6 +1820,7 @@ bd
 bdf
 belkin
 belkinunv
+belkinups
 bestfcom
 bestferrups
 bestfort
@@ -1797,6 +1841,7 @@ bitmapped
 bitmask
 bitness
 bitnesses
+bitwise
 blog
 blogs
 bmake
@@ -1980,6 +2025,7 @@ cstdint
 ctime
 ctrl
 cts
+ctx
 ctypes
 cua
 cuaa
@@ -2040,6 +2086,7 @@ dereference
 desc
 deschis
 descr
+descriptor's
 desde
 desertwitch
 designator
@@ -2097,6 +2144,7 @@ drvctl
 drvpath
 drwxr
 drwxrwx
+drwxrwxrwt
 ds
 dsc
 dsi
@@ -2137,10 +2185,12 @@ egrep
 ei
 el
 elementWidth
+elfdump
 els
 emacs
 emptor
 emptyDir
+enableGiven
 endchar
 enddate
 endian
@@ -2215,6 +2265,7 @@ filenames
 filesystem
 filesystems
 firewalling
+firmware's
 firmwares
 fixNSS
 fmt
@@ -2231,6 +2282,7 @@ fosshost
 fp
 fprintf
 freebsd
+freechurros
 freedesktop
 freeipmi
 freetype
@@ -2245,6 +2297,7 @@ fstab
 ftdi
 fuji
 func
+fusermount
 gamatronic
 gandi
 gc
@@ -2275,6 +2328,7 @@ getconf
 getent
 getenv
 gethostbyname
+getnameinfo
 getopt
 getproctag
 getrlimit
@@ -2365,6 +2419,7 @@ hwdb
 hwinfo
 hwmon
 hwmonX
+hwqr
 hypervisor
 hypervisors
 iBox
@@ -2388,6 +2443,7 @@ idowell
 ie
 ietf
 ifdef
+ifelse
 ifndef
 ignoreFailures
 ignorelb
@@ -2499,6 +2555,7 @@ kVA
 kadets
 kaminski
 kde
+kernel's
 kex
 kext
 keychain
@@ -2529,6 +2586,7 @@ ld
 ldd
 ldflags
 le
+legrand
 len
 leveloffset
 lf
@@ -2548,6 +2606,7 @@ libexec
 libexecdir
 libexpat
 libfreeipmi
+libfuse
 libgd
 libgio
 libglib
@@ -2674,6 +2733,7 @@ maintainership
 maj
 makefile
 makevartable
+malloc
 mandir
 manpage
 manpages
@@ -2728,6 +2788,7 @@ mips
 mirrorlist
 mis
 misconfigured
+mj
 mk
 mkdb
 mkdir
@@ -2825,6 +2886,7 @@ nlb
 nlogic
 nls
 nm
+nmbro
 nn
 nnn
 noAuthNoPriv
@@ -2845,10 +2907,12 @@ nolock
 nombattvolt
 nonascii
 noncommercially
+nonliteral
 noout
 nooutstats
 noprimarytime
 norating
+noreturn
 noro
 noscanlangid
 nosnap
@@ -2873,6 +2937,7 @@ ntopW
 ntu
 nuf
 nuget
+nullptr
 num
 numOfBytesFromUPS
 numa
@@ -2895,6 +2960,7 @@ nutvalue
 nvi
 nvo
 nwfilter
+objdump
 odette
 offdelay
 offsite
@@ -2943,6 +3009,7 @@ osc
 ostream
 other's
 otheruser
+otool
 ouGDQn
 outliers
 overtemp
@@ -2996,6 +3063,7 @@ pinouts
 pipedebug
 pipename
 pixmaps
+pjj
 pkg
 pkgconf
 pkgconfig
@@ -3104,15 +3172,18 @@ qemu
 qs
 queequeg
 quiesce
+quiesced
 qx
 qx's
 qxflags
 rD
+rH
 ragtech
 raritan
 rb
 rc
 rcctl
+readelf
 readline
 readonly
 realpath
@@ -3145,6 +3216,7 @@ renderer
 renderers
 renice
 repindex
+replug
 repo
 reportId
 reposurgeon
@@ -3153,6 +3225,7 @@ req
 resetter
 resizing
 resolv
+restorecon
 restoreconf
 resync
 ret
@@ -3203,9 +3276,11 @@ rw
 réseau
 safenet
 salicru
+santak
 sbin
 sbindir
 sc
+scanf
 scanopts
 scd
 sched
@@ -3313,8 +3388,10 @@ snprintfcat
 snr
 socat
 sockdebug
+socketlib
 socketname
 sockfn
+socklen
 socomec
 soh
 solari
@@ -3326,6 +3403,7 @@ solis
 somename
 somepass
 something's
+soname
 sortable
 sortdict
 sp
@@ -3358,6 +3436,7 @@ startdelay
 startup
 statepath
 stayoff
+stdarg
 stderr
 stdint
 stdlib
@@ -3483,6 +3562,7 @@ timehead
 timername
 timespec
 timestamp
+timestamps
 timeticks
 timeval
 tios
@@ -3570,11 +3650,13 @@ uninstall
 uninterruptible
 uniq
 unistd
+unittest
 unix
 unmapped
 unmounts
 unpowered
 unstash
+unswitched
 updateinfo
 upexia
 upower
@@ -3689,6 +3771,7 @@ verifySourceSig
 versa
 versioned
 versioning
+vertiv
 vh
 victron
 victronups
@@ -3728,6 +3811,7 @@ wininit
 winnutclient
 winpthreads
 winsymlinks
+withGiven
 wix
 wmNUT
 wmnut
@@ -3747,6 +3831,7 @@ xAAAA
 xCC
 xD
 xF
+xFE
 xFF
 xXXXX
 xYYYY

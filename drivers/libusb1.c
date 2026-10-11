@@ -131,6 +131,17 @@ static void nut_libusb_cleanup_atexit(void)
 	nut_usb_ctx_initialized = false;
 }
 
+/* Accessor for the libusb context this backend owns, so callers that need
+ * to submit/manage their own async transfers against an already-open
+ * usb_dev_handle (e.g. a driver-specific always-outstanding interrupt-IN
+ * read) can pump its event loop with the correct context instead of
+ * guessing at libusb's implicit default one. Returns NULL before the first
+ * nut_libusb_open() call. */
+libusb_context *nut_libusb_get_context(void)
+{
+	return nut_usb_ctx_initialized ? nut_usb_ctx : NULL;
+}
+
 static void nut_libusb_close(libusb_device_handle *udev);
 
 /*! Add USB-related driver variables with addvar() and dstate_setinfo().
@@ -302,31 +313,7 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 		const char	*s;
 		unsigned short	us = 0;
 
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_UNSIGNED_ZERO_COMPARE) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_TYPE_LIMIT_COMPARE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_UNSIGNED_ZERO_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-unsigned-zero-compare"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_TYPE_LIMIT_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-type-limit-compare"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-#pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wunreachable-code"
-#pragma clang diagnostic ignored "-Wtautological-compare"
-#pragma clang diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-range-checks.h"
 		if ((s = getval("usb_config_index"))) {
 			if (!str_to_ushort(s, &us, 16) || (us > USB_CTRL_CFGINDEX_MAX)) {
 				fatalx(EXIT_FAILURE, "%s: could not parse usb_config_index", __func__);
@@ -357,12 +344,7 @@ static int nut_libusb_open(libusb_device_handle **udevp,
 			}
 			usb_subdriver.hid_ep_out = (usb_ctrl_endpoint)us;
 		}
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_UNSIGNED_ZERO_COMPARE) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_TYPE_LIMIT_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-range-checks-end.h"
 
 		usb_hid_number_opts_parsed = 1;
 	}

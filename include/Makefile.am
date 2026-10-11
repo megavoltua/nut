@@ -14,6 +14,16 @@ dist_noinst_HEADERS = \
     attribute.h common.h extstate.h proto.h			\
     state.h str.h strjson.h timehead.h upsconf.h		\
     nut_bool.h nut_float.h nut_stdint.h nut_platform.h		\
+    nut-pragmas-covered-switch-default.h			\
+    nut-pragmas-covered-switch-default-end.h			\
+    nut-pragmas-type-limits.h				\
+    nut-pragmas-type-limits-end.h				\
+    nut-pragmas-format-nonliteral.h				\
+    nut-pragmas-format-nonliteral-end.h			\
+    nut-pragmas-range-checks.h				\
+    nut-pragmas-range-checks-end.h				\
+    nut-pragmas-unreachable-code.h				\
+    nut-pragmas-unreachable-code-end.h			\
     strcasestr-static.h wincompat.h
 
 # Optionally deliverable as part of NUT public API:

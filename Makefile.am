@@ -162,7 +162,7 @@ SUBDIR_MAKE_VERBOSE = default
 
 # Run the standard build if going sequential (or with unknown MAKEFLAGS),
 # or fanout if parallel (presuming GNU/BSD/Sun make at least):
-CLEANFILES += .libs-dev-PATH include/.all.nut_version-generated.timestamp clients/.all.libupsclient_version-generated.timestamp
+CLEANFILES += .libs-dev-PATH NIT.env include/.all.nut_version-generated.timestamp clients/.all.libupsclient_version-generated.timestamp
 all-fanout-maybe: .libs-dev-PATH @dotMAKE@
 	@rm -f include/.all.nut_version-generated.timestamp \
 	       clients/.all.libupsclient_version-generated.timestamp
@@ -260,7 +260,7 @@ libtool: $(LIBTOOL_DEPS)
 # by automake. Note that the INSTALL file is (re-)imposed by autotools
 # runs and is essentially a manual on configure script general usage, so
 # NUT's actual installation notes have had to use a different filename.
-EXTRA_DIST = LICENSE-GPL2 LICENSE-GPL3 LICENSE-DCO MAINTAINERS
+EXTRA_DIST = AGENTS.md LICENSE-GPL2 LICENSE-GPL3 LICENSE-DCO MAINTAINERS
 
 # Since the renaming of documentation to `*.adoc` extension to help IDE
 # and GitHub UIs to render the source files in a pretty fashion, we need
@@ -616,7 +616,7 @@ all-recursive/scripts: all/scripts/Windows @dotMAKE@
 DISTCHECK_FLAGS = --with-all --with-ssl --with-doc=auto --enable-docs-man-for-progs-built-only=no --with-pynut=app --with-nut_monitor=force CXXFLAGS='@NUT_CONFIG_CXXFLAGS@' CFLAGS='@NUT_CONFIG_CFLAGS@' CPPFLAGS='@NUT_CONFIG_CPPFLAGS@' LDFLAGS='@NUT_CONFIG_LDFLAGS@'
 DISTCHECK_LIGHT_FLAGS = --with-all=auto --with-ssl=auto --with-doc=auto --enable-docs-man-for-progs-built-only=no --with-pynut=app --with-nut_monitor=force CXXFLAGS='@NUT_CONFIG_CXXFLAGS@' CFLAGS='@NUT_CONFIG_CFLAGS@' CPPFLAGS='@NUT_CONFIG_CPPFLAGS@' LDFLAGS='@NUT_CONFIG_LDFLAGS@'
 DISTCHECK_LIGHT_MAN_FLAGS = --with-all=auto --with-ssl=auto --with-doc=man --enable-docs-man-for-progs-built-only=no --with-pynut=app --with-nut_monitor=force CXXFLAGS='@NUT_CONFIG_CXXFLAGS@' CFLAGS='@NUT_CONFIG_CFLAGS@' CPPFLAGS='@NUT_CONFIG_CPPFLAGS@' LDFLAGS='@NUT_CONFIG_LDFLAGS@'
-DISTCHECK_VALGRIND_FLAGS = --with-all=auto --with-ssl=auto --with-doc=skip --with-valgrind CXXFLAGS='@NUT_CONFIG_CXXFLAGS@ -g' CFLAGS='@NUT_CONFIG_CFLAGS@ -g' CPPFLAGS='@NUT_CONFIG_CPPFLAGS@' LDFLAGS='@NUT_CONFIG_LDFLAGS@' --with-pynut=app --with-nut_monitor=force
+DISTCHECK_VALGRIND_FLAGS = --with-all=auto --with-ssl=auto --with-doc=skip --with-valgrind --with-debuginfo CXXFLAGS='@NUT_CONFIG_CXXFLAGS@' CFLAGS='@NUT_CONFIG_CFLAGS@' CPPFLAGS='@NUT_CONFIG_CPPFLAGS@' LDFLAGS='@NUT_CONFIG_LDFLAGS@' --with-pynut=app --with-nut_monitor=force
 
 # Note: this rule uses envvar DISTCHECK_FLAGS expanded at run-time, which
 # may be passed down from caller and/or one of distcheck-* rules below.
@@ -876,6 +876,7 @@ spellcheck spellcheck-interactive: @dotMAKE@
 		echo "SUCCESS: $@: follow up with spellcheck-quick to revise and update timestamps"; \
 		$(MAKE) $(AM_MAKEFLAGS) spellcheck-quick ; \
 	  fi
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 # Auto-parallel recipe (if current 'make' implementation supports the "-j N"
 # syntax; the optional MAXPARMAKES may be set in NUT CI farm style builds):
@@ -895,18 +896,27 @@ SET_PARMAKES_OPT = \
 all-quick: @dotMAKE@
 	+@$(SET_PARMAKES_OPT); \
 	  $(MAKE) $(AM_MAKEFLAGS) -k -s $${PARMAKES_OPT} all
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 install-quick: @dotMAKE@
 	+@$(SET_PARMAKES_OPT); \
 	  $(MAKE) $(AM_MAKEFLAGS) -k -s $${PARMAKES_OPT} install
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 check-quick: @dotMAKE@
 	+@$(SET_PARMAKES_OPT); \
 	  $(MAKE) $(AM_MAKEFLAGS) -k -s $${PARMAKES_OPT} check
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
+
+memcheck-quick: @dotMAKE@
+	+@$(SET_PARMAKES_OPT); \
+	  $(MAKE) $(AM_MAKEFLAGS) -k -s $${PARMAKES_OPT} memcheck
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 spellcheck-quick: @dotMAKE@
 	+@$(SET_PARMAKES_OPT); \
 	  $(MAKE) $(AM_MAKEFLAGS) -k -s $${PARMAKES_OPT} spellcheck
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 # Run auto-parallel recipe, and if something fails - re-run interactively:
 spellcheck-interactive-quick: @dotMAKE@
@@ -916,6 +926,7 @@ spellcheck-interactive-quick: @dotMAKE@
 		SUBDIR_MAKE_VERBOSE=1 ; export SUBDIR_MAKE_VERBOSE ; \
 	  fi ; \
 	  $(MAKE) $(AM_MAKEFLAGS) SPELLCHECK_QUICK=true -k -s spellcheck-interactive
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 # Note: the "all-docs" and "check-docs" targets may require tools not
 # found by `configure` script (and so avoided by conventional recipes)
@@ -928,6 +939,7 @@ man all-man man-man check-man check-man-man html-man all-html: @dotMAKE@
 	+cd $(abs_top_builddir)/docs && $(MAKE) $(AM_MAKEFLAGS) -s $(abs_top_builddir)/docs/.prep-src-docs
 	+cd $(abs_top_builddir)/docs/man && $(MAKE) $(AM_MAKEFLAGS) -s $(abs_top_builddir)/docs/man/.prep-src-docs
 	+cd $(abs_top_builddir)/docs && $(MAKE) $(AM_MAKEFLAGS) $@
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 INSTALL.nut UPGRADING NEWS README: @dotMAKE@
 	+cd $(abs_top_builddir)/docs && $(MAKE) $(AM_MAKEFLAGS) ../$(@F).adoc-parsed && cp -f ../$(@F).adoc-parsed ../$(@F)
@@ -992,8 +1004,30 @@ maintainer-asciidocs:
 	  fi; \
 	 )
 
-check-NIT check-NIT-devel check-NIT-sandbox check-NIT-sandbox-devel: @dotMAKE@
+# A convenience symlink for developers to source into their shell and have
+# a reproducible environment for repetitive tests. See also .libs-dev-PATH.
+# Neither file is directly used by the `make` process nor scripts, but they
+# are often useful for interactive use of `make check-NIT*` goals or for
+# `gdb` runs and so on. Some IDEs might offer to source them, too.
+# NOTE: "test -L" confirms a symlink exists (we assume it points where it
+#  should) regardless of target existence, and "test -e" confirms a target
+#  file exists after dereference. We DO NOT (re-)create the symlink if either
+#  the target exists and contains expected contents, or the it is "dangling".
+NIT.env:
+	@if test -L $@ || test -h $@; then \
+	    if test -e $@ ; then \
+	        if $(GREP) 'NUT_PORT=' < $@ > /dev/null ; then \
+	            exit 0; \
+	        fi ; \
+	    else exit 0; fi ; \
+	 fi ; \
+	 $(RM_F) $@ ; \
+	 $(LN_S) $(builddir)/tests/NIT/tmp/etc/NIT.env $@ || true
+
+memcheck-NIT memcheck-NIT-devel memcheck-NIT-sandbox memcheck-NIT-sandbox-devel \
+check-NIT check-NIT-devel check-NIT-sandbox check-NIT-sandbox-devel: NIT.env .libs-dev-PATH @dotMAKE@
 	+cd $(builddir)/tests/NIT && $(MAKE) $(AM_MAKEFLAGS) $@
+	@echo "SUCCESS: Completed top-level goal: $@" >&2
 
 VERSION_DEFAULT: dummy-stamp
 	@abs_top_srcdir='$(abs_top_srcdir)' ; \

@@ -48,7 +48,7 @@
 #include "dummy-ups.h"
 
 #define DRIVER_NAME	"Device simulation and repeater driver"
-#define DRIVER_VERSION	"0.26"
+#define DRIVER_VERSION	"0.28"
 
 /* driver description structure */
 upsdrv_info_t upsdrv_info =
@@ -218,33 +218,14 @@ void upsdrv_initinfo(void)
 			break;
 
 		case MODE_NONE:
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wunreachable-code"
-# pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 		/* All enum cases defined as of the time of coding
 		 * have been covered above. Handle later definitions,
 		 * memory corruptions and buggy inputs below...
 		 */
 		default:
 			fatalx(EXIT_FAILURE, "no suitable definition found!");
-#ifdef __clang__
-# pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 	}
 	upsh.instcmd = instcmd;
 
@@ -357,6 +338,7 @@ void upsdrv_updateinfo(void)
 			}
 			else
 			{
+				dstate_datastale();
 				/* try to reconnect */
 				upscli_disconnect(ups);
 				if (upscli_connect(ups, hostname, port, UPSCLI_CONN_TRYSSL) < 0)
@@ -371,33 +353,14 @@ void upsdrv_updateinfo(void)
 			break;
 
 		case MODE_NONE:
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wunreachable-code"
-# pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 		/* All enum cases defined as of the time of coding
 		 * have been covered above. Handle later definitions,
 		 * memory corruptions and buggy inputs below...
 		 */
 		default:
 			break;
-#ifdef __clang__
-# pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 	}
 }
 
@@ -444,7 +407,7 @@ static void dummy_setproctag_callback(const char *tag) {
 	const void	*cookie = nut_common_cookie();
 
 	if (cookie != upscli_upslog_cookie())
-		upscli_upslog_setproctag(xstrdup(tag), cookie);
+		upscli_upslog_setproctag(tag, cookie);
 }
 
 /* optionally tweak prognames[] entries */
@@ -463,7 +426,7 @@ void upsdrv_tweak_prognames(void)
 	if (cookie != upscli_upslog_cookie()) {
 		/* Send over a copy */
 		upscli_upslog_setprocname(xstrdup(getmyprocname()), cookie);
-		upscli_upslog_setproctag(xstrdup(getproctag()), cookie);
+		upscli_upslog_setproctag(getproctag(), cookie);
 
 		upsdrv_callback_setproctag = dummy_setproctag_callback;
 	}
@@ -571,21 +534,7 @@ void upsdrv_initups(void)
 			case MODE_NONE:
 			case MODE_REPEATER:
 			case MODE_META:
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-# pragma clang diagnostic push
-# pragma clang diagnostic ignored "-Wunreachable-code"
-# pragma clang diagnostic ignored "-Wcovered-switch-default"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 		/* All enum cases defined as of the time of coding
 		 * have been covered above. Handle later definitions,
 		 * memory corruptions and buggy inputs below...
@@ -600,12 +549,7 @@ void upsdrv_initups(void)
 				mode = MODE_DUMMY_LOOP;
 				dstate_setinfo("driver.parameter.mode", "dummy");
 				break;
-#ifdef __clang__
-# pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 		}
 
 		prepare_filepath(fn, sizeof(fn));
@@ -755,12 +699,13 @@ static int upsclient_update_vars(void)
 		return ret;
 	}
 
-	while (upscli_list_next(ups, numq, query, &numa, &answer) == 1)
+	while ((ret = upscli_list_next(ups, numq, query, &numa, &answer)) == 1)
 	{
 		/* VAR <upsname> <varname> <val> */
 		if (numa < 4)
 		{
 			upsdebugx(1, "Error: insufficient data (got %" PRIuSIZE " args, need at least 4)", numa);
+			return -1;
 		}
 
 		upsdebugx(5, "Received: %s %s %s %s",
@@ -769,6 +714,11 @@ static int upsclient_update_vars(void)
 		/* do not override the driver collection */
 		if (strncmp(answer[2], "driver.", 7))
 			setvar(answer[2], answer[3]);
+	}
+	if (ret < 0)
+	{
+		upsdebugx(1, "Error: %s (%i)", upscli_strerror(ups), upscli_upserror(ups));
+		return ret;
 	}
 	return 1;
 }

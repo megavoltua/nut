@@ -614,6 +614,9 @@ static void client_disconnect(nut_ctype_t *client)
 	shutdown(client->sock_fd, 2);
 	close(client->sock_fd);
 
+	/* Avoid re-closing twice in ssl_finish() below: */
+	client->sock_fd = ERROR_FD_SOCK;
+
 #ifdef WIN32
 	CloseHandle(client->Event);
 #endif	/* WIN32 */
@@ -1243,6 +1246,10 @@ static void upsd_cleanup(void)
 	free(certfile);
 	free(certname);
 	free(certpasswd);
+
+#if defined(WITH_SSL)
+	free(certpath);
+#endif
 
 	free(fds);
 	free(handler);
@@ -1939,21 +1946,7 @@ static void mainloop(void)
 				upsdebugx(2, "%s: server disconnected", __func__);
 				break;
 
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcovered-switch-default"
-#pragma clang diagnostic ignored "-Wunreachable-code"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 			/* All enum cases defined as of the time of coding
 			 * have been covered above. Handle later definitions,
 			 * memory corruptions and buggy inputs below...
@@ -1961,12 +1954,7 @@ static void mainloop(void)
 			default:
 				upsdebugx(2, "%s: <unknown> disconnected", __func__);
 				break;
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 
 			}
 
@@ -2003,21 +1991,7 @@ static void mainloop(void)
 				client_connect((stype_t *)handler[i].data);
 				break;
 
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT
-# pragma GCC diagnostic ignored "-Wcovered-switch-default"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE
-# pragma GCC diagnostic ignored "-Wunreachable-code"
-#endif
-/* Older CLANG (e.g. clang-3.4) seems to not support the GCC pragmas above */
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wcovered-switch-default"
-#pragma clang diagnostic ignored "-Wunreachable-code"
-#endif
+#include "nut-pragmas-covered-switch-default.h"
 			/* All enum cases defined as of the time of coding
 			 * have been covered above. Handle later definitions,
 			 * memory corruptions and buggy inputs below...
@@ -2025,12 +1999,7 @@ static void mainloop(void)
 			default:
 				upsdebugx(2, "%s: <unknown> has data available", __func__);
 				break;
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_COVERED_SWITCH_DEFAULT) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_UNREACHABLE_CODE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-covered-switch-default-end.h"
 			}
 
 			continue;
@@ -2318,15 +2287,7 @@ static void mainloop(void)
 		return;
 	}
 
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic push
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS
-# pragma GCC diagnostic ignored "-Wtype-limits"
-#endif
-#ifdef HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE
-# pragma GCC diagnostic ignored "-Wtautological-constant-out-of-range-compare"
-#endif
+#include "nut-pragmas-type-limits.h"
 	/* https://learn.microsoft.com/en-us/windows/win32/api/synchapi/nf-synchapi-waitformultipleobjects */
 	if (ret >= WAIT_ABANDONED_0 && ret <= WAIT_ABANDONED_0 + (nfds < sysmaxconn ? nfds : sysmaxconn) - 1) {
 		/* One abandoned mutex object that satisfied the wait? */
@@ -2341,9 +2302,7 @@ static void mainloop(void)
 		ret = ret - WAIT_OBJECT_0 + chunk * sysmaxconn;
 		upsdebugx(5, "%s: got event on FD array item: %" PRIu64 " of %" PRIu64, __func__, ret, nfds - 1);
 	}
-#if (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_PUSH_POP) && ( (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TYPE_LIMITS) || (defined HAVE_PRAGMA_GCC_DIAGNOSTIC_IGNORED_TAUTOLOGICAL_CONSTANT_OUT_OF_RANGE_COMPARE) )
-# pragma GCC diagnostic pop
-#endif
+#include "nut-pragmas-type-limits-end.h"
 
 	if (ret >= nfds) {
 		/* Array indexes are [0..nfds-1] */

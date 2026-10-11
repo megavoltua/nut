@@ -27,6 +27,26 @@ completeness of the protocol support).  Numerous third-party implementations
 for other languages also exist, with some related projects listed on the
 link:https://networkupstools.org/projects.html[NUT web site pages].
 
+[NOTE]
+.Relation to RFC 9271
+======
+This document was one of the inputs for RFC 9271 published by IETF at
+https://www.rfc-editor.org/info/rfc9271 and mostly overlaps with it.
+
+There are currently known discrepancies, with NUT defining some key words
+on top of the RFC requirements, and not yet defining others (logically
+equivalent aliases). Also, RFC dictates that an Attachment Daemon (the
+`upsd` "data server" in case of NUT implementation of the standard)
+"limits access to clients whose credentials match those in the file
+`upsd.users`" and "there is no anonymous access", because that is the
+reasonable requirement these days and a standard document would not
+be accepted for publication without that being stated. Nevertheless,
+historically NUT clients have used anonymous read-only access to query
+the data server for information. It was tested that everything works
+if they do authenticate, so eventually NUT default configurations will
+shift to requiring the `USERNAME` and `PASSWORD` before other commands
+(with `STARTTLS` encouraged to protect those credentials on the wire).
+======
 
 Old command removal notice
 --------------------------
@@ -41,8 +61,29 @@ Command reference
 
 Multi-word elements are contained within "quotes" for easier parsing.
 Embedded quotes are escaped with backslashes.  Embedded backslashes are
-also escaped by representing them as \\.  This protocol is intended to
+also escaped by representing them as `\\`.  This protocol is intended to
 be interpreted with parseconf (NUT parser) or something similar.
+
+It is an ASCII text-based line-oriented protocol, with end of each line
+signaled by a single `\n` (`0x0A`) character.
+
+Double quotes start a quoted element only at the beginning of an element.
+The closing quote completes that element, so `"one"two` produces two
+elements, `one` and `two`. Single quotes (apostrophes) are ordinary
+characters; they do not group words. Outside double quotes, unescaped
+whitespace separates elements, and an unescaped `=` becomes a separate
+element of its own.
+
+An unescaped `#` starts a comment only outside double quotes. Inside
+double quotes it is literal, so `"Outlet #3"` represents `Outlet #3`.
+For compatibility with older parsers which rejected an unescaped `#`
+inside quotes, `pconf_encode()` continues to send it as `\#`.
+
+A backslash quotes the next character once, inside or outside double
+quotes, subject to the character restrictions of the parser. For example,
+`one\ two` is one element, while `\n` represents the letter `n`, not a
+newline. A backslash followed by a physical newline continues the logical
+line. These rules are NUT syntax, not shell or JSON string syntax.
 
 
 Revision history
@@ -341,7 +382,7 @@ Response:
 	BEGIN LIST CMD <upsname>
 	CMD <upsname> <cmdname>
 	...
-	END LIST CMD <cmdname>
+	END LIST CMD <upsname>
 
 	BEGIN LIST CMD su700
 	CMD su700 load.on

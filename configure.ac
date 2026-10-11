@@ -1450,7 +1450,7 @@ AS_CASE(["${nut_with_threading}"],
     [no], [],
         [AC_MSG_ERROR([Unsupported value for --with-threading option: "${nut_with_threading}"])]
 )
-NUT_REPORT_FEATURE([Enable support for parallelization of some tools], [${nut_with_threading}], [${SEMLIBS}],
+NUT_REPORT_FEATURE([enable support for parallelization of some tools], [${nut_with_threading}], [${SEMLIBS}],
 					[WITH_THREADING], [Define to enable build with threading support])
 
 dnl ----------------------------------------------------------------------
@@ -1718,12 +1718,25 @@ AS_IF([test x"${ac_cv_printfmt_zu}" = xyes],
     [AC_MSG_WARN([Desired C library support for printf("%zu", size_t) not found; try adding -D_POSIX_C_SOURCE=200112L])]
     )
 
+AC_CHECK_HEADER([stdarg.h],
+    [AC_DEFINE([HAVE_STDARG_H], [1],
+        [Define to 1 if you have <stdarg.h>.])])
+
+AC_CHECK_HEADER([sys/stdarg.h],
+    [AC_DEFINE([HAVE_SYS_STDARG_H], [1],
+        [Define to 1 if you have <sys/stdarg.h>.])])
+
 AC_CACHE_CHECK([for va_copy(dest,src)],
   [ac_cv_have_va_copy],
   [
     AX_RUN_OR_LINK_IFELSE(
       [AC_LANG_PROGRAM(
-        [[#include <stdarg.h>
+        [[#ifdef HAVE_STDARG_H
+          # include <stdarg.h>
+          #endif
+          #ifdef HAVE_SYS_STDARG_H
+          # include <sys/stdarg.h>
+          #endif
           void check_va_copy(const char *fmt, ...) {
             va_list ap1, ap2;
             va_start(ap1, fmt);
@@ -1744,7 +1757,12 @@ AC_CACHE_CHECK([for __va_copy(dest,src)],
   [
     AX_RUN_OR_LINK_IFELSE(
       [AC_LANG_PROGRAM(
-        [[#include <stdarg.h>
+        [[#ifdef HAVE_STDARG_H
+          # include <stdarg.h>
+          #endif
+          #ifdef HAVE_SYS_STDARG_H
+          # include <sys/stdarg.h>
+          #endif
           void check___va_copy(const char *fmt, ...) {
             va_list ap1, ap2;
             va_start(ap1, fmt);
@@ -2024,7 +2042,7 @@ dnl Solaris compatibility - check for -lnsl and -lsocket
 AC_SEARCH_LIBS(gethostbyname, nsl)
 AC_SEARCH_LIBS(connect, socket)
 
-AC_CHECK_HEADERS(sys/modem.h stdarg.h varargs.h, [], [], [AC_INCLUDES_DEFAULT])
+AC_CHECK_HEADERS(sys/modem.h varargs.h, [], [], [AC_INCLUDES_DEFAULT])
 
 
 dnl pthread related checks
@@ -3782,6 +3800,7 @@ if test x"${nut_with_nut_monitor}" != xno ; then
     fi
 fi
 
+dnl Options regarding NUT-Monitor GUI app:
 AC_MSG_CHECKING([if we can and should install NUT-Monitor desktop application])
 AS_IF([test x"${nut_enable_configure_debug}" = xyes], [
     AC_MSG_NOTICE([(CONFIGURE-DEVEL-DEBUG) nut_with_nut_monitor-4: ${nut_with_nut_monitor}])
@@ -3919,6 +3938,45 @@ if test "${nut_with_pynut}" = force ; then
     fi
 fi
 
+dnl Check test dependency only for interpreters with PyNUT prerequisites.
+dnl A default interpreter shared with Python2 or Python3 is tested there.
+nut_with_python_unittest_py2="no"
+nut_with_python_unittest_py3="no"
+nut_with_python_unittest_py="no"
+dnl NOTE: Maybe we would remove this "if" layer, if there would appear more
+dnl Pythonic things to `unittest` eventually (hence the abstracted varnames):
+if test "${nut_with_pynut}" = yes ; then
+    if test "${nut_with_pynut_py2}" = yes ; then
+        AC_MSG_CHECKING([if we have Python2 prerequisites for PyNUT unit testing])
+        if ${PYTHON2} -c "import unittest;" 1>&5 2>&5 ; then
+            nut_with_python_unittest_py2="yes"
+            AC_MSG_RESULT([yes])
+        else
+            AC_MSG_RESULT([no])
+        fi
+    fi
+
+    if test "${nut_with_pynut_py3}" = yes ; then
+        AC_MSG_CHECKING([if we have Python3 prerequisites for PyNUT unit testing])
+        if ${PYTHON3} -c "import unittest;" 1>&5 2>&5 ; then
+            nut_with_python_unittest_py3="yes"
+            AC_MSG_RESULT([yes])
+        else
+            AC_MSG_RESULT([no])
+        fi
+    fi
+
+    if test "${nut_with_pynut_py}" = yes ; then
+        AC_MSG_CHECKING([if we have Python (default version) prerequisites for PyNUT unit testing])
+        if ${PYTHON} -c "import unittest;" 1>&5 2>&5 ; then
+            nut_with_python_unittest_py="yes"
+            AC_MSG_RESULT([yes])
+        else
+            AC_MSG_RESULT([no])
+        fi
+    fi
+fi
+
 NUT_REPORT_PROGRAM([install NUT-Monitor desktop application], [${nut_with_nut_monitor}], [],
 					[WITH_NUT_MONITOR], [Define to enable NUT-Monitor desktop application installation])
 
@@ -3937,6 +3995,11 @@ AM_CONDITIONAL(WITH_PYNUT_PY,  test "${nut_with_pynut_py}" = "yes"  -a "${nut_wi
 AM_CONDITIONAL(WITH_PYNUT_PY2, test "${nut_with_pynut_py2}" = "yes" -a "${nut_with_pynut}" = yes)
 AM_CONDITIONAL(WITH_PYNUT_PY3, test "${nut_with_pynut_py3}" = "yes" -a "${nut_with_pynut}" = yes)
 AM_CONDITIONAL(WITH_PYNUT_APP, test "${nut_with_pynut}" = "app")
+
+dnl Can and should we test the module here?
+AM_CONDITIONAL(WITH_PYNUT_UNITTEST_PY,  test "${nut_with_python_unittest_py}" = "yes"  -a "${nut_with_pynut}" = yes)
+AM_CONDITIONAL(WITH_PYNUT_UNITTEST_PY2, test "${nut_with_python_unittest_py2}" = "yes" -a "${nut_with_pynut}" = yes)
+AM_CONDITIONAL(WITH_PYNUT_UNITTEST_PY3, test "${nut_with_python_unittest_py3}" = "yes" -a "${nut_with_pynut}" = yes)
 
 AC_SUBST([nut_with_nut_monitor_dir], [${nut_with_nut_monitor_dir}])
 AC_SUBST([nut_with_nut_monitor_py2gtk2], [${nut_with_nut_monitor_py2gtk2}])
@@ -6368,16 +6431,16 @@ NUT_ARG_WITH_CUSTOM_DEFAULT_HELP([user], [USERNAME], [(Unprivileged) user for pr
 AS_CASE([${nut_with_user}],
 	[yes|no], [AC_MSG_ERROR(invalid option --with(out)-user - see docs/configure.txt)],
 	["${RUN_AS_USER}"], [
-		 nut_user_given=no
-		 AC_MSG_RESULT([default])
+		 AS_IF([test x"${nut_withGiven_user}" = xyes],
+			[AC_MSG_RESULT([specified])],	dnl Just happens to be same as default
+			[AC_MSG_RESULT([default])])
 		],
 		[RUN_AS_USER="${nut_with_user}"
-		 nut_user_given=yes
 		 AC_MSG_RESULT([specified])
 		]
 )
 NUT_REPORT_SETTING([User to run as],
-    RUN_AS_USER, "${RUN_AS_USER}", [User to switch to if started as root])
+	RUN_AS_USER, "${RUN_AS_USER}", [User to switch to if started as root])
 
 dnl Note: Technically daemons "run as" the primary GID of the user they de-levate into;
 dnl but in simpler setups (stipulated by common packaging) this one is the "run as" GID too
@@ -6387,21 +6450,21 @@ NUT_ARG_WITH_CUSTOM_DEFAULT_HELP([group], [GROUPNAME], [(Unprivileged) group mem
 AS_CASE([${nut_with_group}],
 	[yes|no], [AC_MSG_ERROR(invalid option --with(out)-group - see docs/configure.txt)],
 	["${RUN_AS_GROUP}"], [
-		 nut_group_given=no
-		 AC_MSG_RESULT([default])
+		 AS_IF([test x"${nut_withGiven_group}" = xyes],
+			[AC_MSG_RESULT([specified])],	dnl Just happens to be same as default
+			[AC_MSG_RESULT([default])])
 		],
 		[RUN_AS_GROUP="${nut_with_group}"
-		 nut_group_given=yes
 		 AC_MSG_RESULT([specified])
 		]
 )
 NUT_REPORT_SETTING([Group of user to own state files],
-    RUN_AS_GROUP, "${RUN_AS_GROUP}", [Group membership for state files of drivers normally started as root])
+	RUN_AS_GROUP, "${RUN_AS_GROUP}", [Group membership for state files of drivers normally started as root])
 
 dnl check that --with-user is given if --with-group is given.
-if test "${nut_user_given}" = "yes" -a "${nut_group_given}" = "no"; then
+if test "${nut_withGiven_user}" = "yes" -a "${nut_withGiven_group}" = "no"; then
 	AC_MSG_ERROR([If you specify --with-user, you also must specify --with-group])
-elif test "${nut_user_given}" = "no" -a "${nut_group_given}" = "yes"; then
+elif test "${nut_withGiven_user}" = "no" -a "${nut_withGiven_group}" = "yes"; then
 	AC_MSG_ERROR([If you specify --with-group, you also must specify --with-user])
 fi
 
@@ -7460,6 +7523,15 @@ AC_CONFIG_FILES([
  Makefile
 ])
 
+dnl NOTE: Since PR https://github.com/networkupstools/nut/pull/3596 we again
+dnl  have only one Python3 source file, which covers two (here identical)
+dnl  build products. They may be delivered as sym-/hard-links, if the target
+dnl  platform offers both Qt5 and Qt6 implementations to care about.
+AC_CONFIG_FILES([scripts/python/app/NUT-Monitor-py3qt5:scripts/python/app/NUT-Monitor-py3qt.in],
+    [chmod +x scripts/python/app/NUT-Monitor-py3qt5])
+AC_CONFIG_FILES([scripts/python/app/NUT-Monitor-py3qt6:scripts/python/app/NUT-Monitor-py3qt.in],
+    [chmod +x scripts/python/app/NUT-Monitor-py3qt6])
+
 AC_MSG_NOTICE([Generating templated script files that should be marked executable])
 m4_foreach_w([SCRIPTFILE], [
  docs/docinfo.xml.sh
@@ -7471,8 +7543,6 @@ m4_foreach_w([SCRIPTFILE], [
  scripts/augeas/gen-nutupsconf-aug.py
  scripts/external_apis/enphase/enphase-monitor
  scripts/python/app/NUT-Monitor-py2gtk2
- scripts/python/app/NUT-Monitor-py3qt5
- scripts/python/app/NUT-Monitor-py3qt6
  scripts/python/module/test_nutclient.py
  scripts/upsdrvsvcctl/nut-driver-enumerator.sh
  scripts/upsdrvsvcctl/upsdrvsvcctl
